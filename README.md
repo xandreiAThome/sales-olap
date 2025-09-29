@@ -13,6 +13,7 @@ This project was developed as part of the **Advanced Database** course. It demon
    Install Python 3.x and required packages (pandas, sqlalchemy, mysql-connector-python).
    Set up a MySQL database instance for the warehouse.
 2. ETL Pipeline
+   Create a `.env` variable, look at the `.env.example` for the required fields
    Configure database connection in app.py.
    Run ETL scripts to extract, clean, and load data into the warehouse schema
 
