@@ -99,21 +99,17 @@ def transform_and_load_riders():
         ]
 
         # --- Hybrid UPSERT logic ---
-        # 1️⃣ Get existing IDs
         existing_ids = set(
             row[0] for row in session.execute(select(Dim_Rider.Rider_ID)).all()
         )
 
-        # 2️⃣ Split new vs existing
         new_records = [r for r in rider_records if r["Rider_ID"] not in existing_ids]
         update_records = [r for r in rider_records if r["Rider_ID"] in existing_ids]
 
-        # 3️⃣ Bulk insert new rows
         if new_records:
             session.bulk_insert_mappings(Dim_Rider, new_records)
             logging.info(f"Inserted {len(new_records)} new riders.")
 
-        # 4️⃣ Bulk update existing rows
         if update_records:
             session.bulk_update_mappings(Dim_Rider, update_records)
             logging.info(f"Updated {len(update_records)} existing riders.")
