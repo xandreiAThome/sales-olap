@@ -1,14 +1,15 @@
 from util.db_source import riders, couriers
-from models.Dim_Riders import dim_riders
+from models.Dim_Riders import Dim_Rider
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
 import logging
+from sqlalchemy import select
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[logging.StreamHandler()],
 )
 
 
@@ -81,30 +82,46 @@ def transform_and_load_riders():
     cleaned_couriers = clean_couriers_data(couriers_data)
 
     session = Session_db_warehouse()
-    inserted = 0
     try:
         # join riders and couriers to denormalize the 2 tables
         courier_dict = {courier["id"]: courier["name"] for courier in cleaned_couriers}
-        for rider in cleaned_riders:
-            rider_record = {
+        rider_records = [
+            {
+                "Rider_ID": rider["id"],
                 "First_Name": rider["firstName"],
                 "Last_Name": rider["lastName"],
                 "Vehicle_Type": rider["vehicleType"],
                 "Age": rider["age"],
                 "Gender": rider["gender"],
                 "Courier_Name": courier_dict.get(rider["courierId"]),
-                "Rider_ID": rider["id"],
             }
-            try:
-                insert_stmt = dim_riders.insert().values(**rider_record)
-                session.execute(insert_stmt)
-                inserted += 1
-            except Exception as e:
-                logging.error(f"Error inserting rider {rider_record['Rider_ID']}: {e}")
+            for rider in cleaned_riders
+        ]
+
+        # --- Hybrid UPSERT logic ---
+        # 1️⃣ Get existing IDs
+        existing_ids = set(
+            row[0] for row in session.execute(select(Dim_Rider.Rider_ID)).all()
+        )
+
+        # 2️⃣ Split new vs existing
+        new_records = [r for r in rider_records if r["Rider_ID"] not in existing_ids]
+        update_records = [r for r in rider_records if r["Rider_ID"] in existing_ids]
+
+        # 3️⃣ Bulk insert new rows
+        if new_records:
+            session.bulk_insert_mappings(Dim_Rider, new_records)
+            logging.info(f"Inserted {len(new_records)} new riders.")
+
+        # 4️⃣ Bulk update existing rows
+        if update_records:
+            session.bulk_update_mappings(Dim_Rider, update_records)
+            logging.info(f"Updated {len(update_records)} existing riders.")
+
         session.commit()
-        logging.info(f"Inserted {inserted} riders into warehouse DB.")
+
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}")
+        logging.error(f"Error during transform/load: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

@@ -1,5 +1,6 @@
 from util.db_source import products
-from models.Dim_Products import dim_products
+from sqlalchemy import select
+from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
@@ -7,9 +8,10 @@ import logging
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[logging.StreamHandler()],
 )
+
 
 def extract_products():
     session = Session_db_source()
@@ -48,10 +50,9 @@ def transform_and_load_products():
     cleaned_products = clean_products_data(products_data)
 
     session = Session_db_warehouse()
-    inserted = 0
     try:
-        for product in cleaned_products:
-            product_record = {
+        product_records = [
+            {
                 "Product_Code": product["productCode"],
                 "Product_ID": product["id"],
                 "Name": product["name"],
@@ -59,16 +60,31 @@ def transform_and_load_products():
                 "Description": product["description"],
                 "Price": product["price"],
             }
-            try:
-                insert_stmt = dim_products.insert().values(**product_record)
-                session.execute(insert_stmt)
-                inserted += 1
-            except Exception as e:
-                logging.error(f"Error inserting product {product_record['Product_Code']}: {e}")
+            for product in cleaned_products
+        ]
+
+        # --- Hybrid UPSERT logic ---
+        existing_ids = set(
+            row[0] for row in session.execute(select(Dim_Products.Product_ID)).all()
+        )
+
+        new_records = [
+            r for r in product_records if r["Product_ID"] not in existing_ids
+        ]
+        update_records = [r for r in product_records if r["Product_ID"] in existing_ids]
+
+        if new_records:
+            session.bulk_insert_mappings(Dim_Products, new_records)
+            logging.info(f"Inserted {len(new_records)} new products.")
+
+        if update_records:
+            session.bulk_update_mappings(Dim_Products, update_records)
+            logging.info(f"Updated {len(update_records)} existing products.")
+
         session.commit()
-        logging.info(f"Inserted {inserted} products into warehouse DB.")
+
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}")
+        logging.error(f"Error during transform/load: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()
