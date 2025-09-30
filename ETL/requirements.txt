@@ -2,3 +2,6 @@ dotenv
 sqlalchemy
 pandas
 mysql-connector-python
+pymysql
+cryptography
+sympy

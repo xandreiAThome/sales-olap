@@ -1,5 +1,4 @@
 from dotenv import load_dotenv
-import os
 from util.db_source import db_source_engine, Session_db_source, metadata_source
 from util.db_warehouse import db_warehouse_engine, Session_db_warehouse
 from sqlalchemy import text
