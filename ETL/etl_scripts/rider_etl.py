@@ -1,6 +1,5 @@
-from sqlalchemy import text
-from sympy import pprint
-from util.db_source import riders, couriers, db_source_engine, metadata_source
+from util.db_source import riders, couriers
+from models.Dim_Riders import dim_riders
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
@@ -68,23 +67,11 @@ def transform_and_load_riders():
             "Age": rider["age"],
             "Gender": rider["gender"],
             "Courier_Name": courier_dict.get(rider["courierId"]),
+            "Rider_ID": rider["id"],
         }
-        session.execute(
-            text(
-                """
-            INSERT INTO dim_riders (First_Name, Last_Name, Vehicle_Type, Age, Gender, Courier_Name)
-            VALUES (:first_name, :last_name, :vehicle_type, :age, :gender, :courier_name)
-            """
-            ),
-            {
-                "first_name": rider_record["First_Name"],
-                "last_name": rider_record["Last_Name"],
-                "vehicle_type": rider_record["Vehicle_Type"],
-                "age": rider_record["Age"],
-                "gender": rider_record["Gender"],
-                "courier_name": rider_record["Courier_Name"],
-            },
-        )
+
+        insert_stmt = dim_riders.insert().values(**rider_record)
+        session.execute(insert_stmt)
 
     session.commit()
     session.close()
