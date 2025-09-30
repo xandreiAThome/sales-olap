@@ -1,0 +1,33 @@
+services:
+  mysql_src_db:
+    image: mysql:8.1
+    container_name: mysql_src_db
+    restart: unless-stopped
+    ports:
+      - "3306:3306"       # Host port 3306 maps to container's 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword1
+      MYSQL_DATABASE: db_src
+      MYSQL_USER: devuser1
+      MYSQL_PASSWORD: devpass1
+    volumes:
+      - mysql_src_data:/var/lib/mysql
+
+  mysql_warehouse_db:
+    image: mysql:8.1
+    container_name: mysql_warehouse_db
+    restart: unless-stopped
+    ports:
+      - "3307:3306"       # Host port 3307 maps to container's 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword2
+      MYSQL_DATABASE: db_warehouse
+      MYSQL_USER: devuser2
+      MYSQL_PASSWORD: devpass2
+    volumes:
+      - mysql_warehouse_data:/var/lib/mysql
+
+volumes:
+  mysql_src_data:
+  mysql_warehouse_data:
+

@@ -14,9 +14,9 @@ metadata_source = MetaData()
 metadata_source.reflect(bind=db_source_engine)
 
 # Reflect tables
-users = metadata_source.tables["users"]
-orders = metadata_source.tables["orders"]
-orderitems = metadata_source.tables["orderitems"]
-products = metadata_source.tables["products"]
-couriers = metadata_source.tables["couriers"]
-riders = metadata_source.tables["riders"]
+users = metadata_source.tables["Users"]
+orders = metadata_source.tables["Orders"]
+orderitems = metadata_source.tables["OrderItems"]
+products = metadata_source.tables["Products"]
+couriers = metadata_source.tables["Couriers"]
+riders = metadata_source.tables["Riders"]
