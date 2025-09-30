@@ -15,6 +15,8 @@ load_dotenv()
 database_warehouse_url = os.getenv("DATABASE_WAREHOUSE_URL")
 if not database_warehouse_url:
     raise ValueError("DATABASE_WAREHOUSE_URL environment variable not set")
-db_warehouse_engine = create_engine(database_warehouse_url, echo=True)
+db_warehouse_engine = create_engine(
+    database_warehouse_url, echo=False
+)  # set to false for production
 Session_db_warehouse = sessionmaker(bind=db_warehouse_engine)
 Base.metadata.create_all(db_warehouse_engine)
