@@ -5,7 +5,7 @@ from .base import Base
 class Dim_Products(Base):
     __tablename__ = "dim_products"
 
-    Product_ID = Column(Integer, primary_key=True)
+    Product_ID = Column(Integer, primary_key=True, unique=True, nullable=False)
     Product_Code = Column(String(20), nullable=False)
     Category = Column(String(50), nullable=False)
     Description = Column(String(255), nullable=False)

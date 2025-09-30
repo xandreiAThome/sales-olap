@@ -5,7 +5,7 @@ from .base import Base
 class Dim_Rider(Base):
     __tablename__ = "dim_riders"
 
-    Rider_ID = Column(Integer, primary_key=True)
+    Rider_ID = Column(Integer, primary_key=True, unique=True, nullable=False)
     First_Name = Column(String(40), nullable=False)
     Last_Name = Column(String(40), nullable=False)
     Vehicle_Type = Column(String(40), nullable=False)

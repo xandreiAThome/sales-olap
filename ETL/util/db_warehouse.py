@@ -7,6 +7,7 @@ from models.base import Base
 # Import your dimension models here
 from models.Dim_Riders import Dim_Rider
 from models.Dim_Products import Dim_Products
+from models.Dim_Users import Dim_Users
 
 load_dotenv()
 
