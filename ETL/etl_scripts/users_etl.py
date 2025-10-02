@@ -3,16 +3,12 @@ from models.Dim_Users import Dim_Users
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
-import logging
+from util.logging_config import get_logger
 from util.utils import parse_date
 from util.utils import clean_phone_number
 from sqlalchemy.dialects.mysql import insert
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+logger = get_logger(__name__)
 
 
 def extract_users():
@@ -20,10 +16,10 @@ def extract_users():
     try:
         result = session.execute(users.select())
         users_data = result.fetchall()
-        logging.info(f"Extracted {len(users_data)} users from source DB.")
+        logger.info(f"Extracted {len(users_data)} users from source DB.")
         return users_data
     except Exception as e:
-        logging.error(f"Error extracting users: {e}")
+        logger.error(f"Error extracting users: {e}")
         return []
     finally:
         session.close()
@@ -55,10 +51,10 @@ def clean_users_data(data):
         df["phoneNumber"] = df["phoneNumber"].apply(clean_phone_number)
 
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
+        logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning users data: {e}")
+        logger.error(f"Error cleaning users data: {e}")
         return []
 
 
@@ -106,10 +102,10 @@ def transform_and_load_users():
 
             session.execute(stmt)
             session.commit()
-            logging.info(f"Upserted {len(user_records)} users in one SQL statement.")
+            logger.info(f"Upserted {len(user_records)} users")
 
     except Exception as e:
-        logging.error(f"Error during transform/load users: {e}", exc_info=True)
+        logger.error(f"Error during transform/load users: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

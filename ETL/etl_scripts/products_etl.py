@@ -4,13 +4,9 @@ from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
-import logging
+from util.logging_config import get_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+logger = get_logger(__name__)
 
 
 def extract_products():
@@ -18,10 +14,10 @@ def extract_products():
     try:
         result = session.execute(products.select())
         products_data = result.fetchall()
-        logging.info(f"Extracted {len(products_data)} products from source DB.")
+        logger.info(f"Extracted {len(products_data)} products from source DB.")
         return products_data
     except Exception as e:
-        logging.error(f"Error extracting products: {e}")
+        logger.error(f"Error extracting products: {e}")
         return []
     finally:
         session.close()
@@ -38,10 +34,10 @@ def clean_products_data(data):
         df["name"] = df["name"].str.title().str.strip()
 
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
+        logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning products data: {e}")
+        logger.error(f"Error cleaning products data: {e}")
         return []
 
 
@@ -77,12 +73,12 @@ def transform_and_load_products():
 
             session.execute(stmt)
             session.commit()
-            logging.info(
-                f"Upserted {len(product_records)} products in one SQL statement."
+            logger.info(
+                f"Upserted {len(product_records)} products"
             )
 
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}", exc_info=True)
+        logger.error(f"Error during transform/load: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

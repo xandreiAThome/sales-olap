@@ -3,14 +3,10 @@ from models.Dim_Riders import Dim_Rider
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
-import logging
+from util.logging_config import get_logger
 from sqlalchemy.dialects.mysql import insert
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+logger = get_logger(__name__)
 
 
 def extract_riders():
@@ -18,10 +14,10 @@ def extract_riders():
     try:
         result = session.execute(riders.select())
         riders_data = result.fetchall()
-        logging.info(f"Extracted {len(riders_data)} riders from source DB.")
+        logger.info(f"Extracted {len(riders_data)} riders from source DB.")
         return riders_data
     except Exception as e:
-        logging.error(f"Error extracting riders: {e}")
+        logger.error(f"Error extracting riders: {e}")
         return []
     finally:
         session.close()
@@ -32,10 +28,10 @@ def extract_couriers():
     try:
         result = session.execute(couriers.select())
         couriers_data = result.fetchall()
-        logging.info(f"Extracted {len(couriers_data)} couriers from source DB.")
+        logger.info(f"Extracted {len(couriers_data)} couriers from source DB.")
         return couriers_data
     except Exception as e:
-        logging.error(f"Error extracting couriers: {e}")
+        logger.error(f"Error extracting couriers: {e}")
         return []
     finally:
         session.close()
@@ -54,10 +50,10 @@ def clean_riders_data(data):
         df["lastName"] = df["lastName"].str.title().str.strip()
 
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned riders data, {len(cleaned_data)} records ready.")
+        logger.info(f"Cleaned riders data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning riders data: {e}")
+        logger.error(f"Error cleaning riders data: {e}")
         return []
 
 
@@ -68,10 +64,10 @@ def clean_couriers_data(data):
 
         df["name"] = df["name"].str.upper().str.strip()
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned couriers data, {len(cleaned_data)} records ready.")
+        logger.info(f"Cleaned couriers data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning couriers data: {e}")
+        logger.error(f"Error cleaning couriers data: {e}")
         return []
 
 
@@ -113,10 +109,10 @@ def transform_and_load_riders():
 
             session.execute(stmt)
             session.commit()
-            logging.info(f"Upserted {len(rider_records)} riders in one SQL statement.")
+            logger.info(f"Upserted {len(rider_records)} riders")
 
     except Exception as e:
-        logging.error(f"Error during transform/load riders: {e}", exc_info=True)
+        logger.error(f"Error during transform/load riders: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

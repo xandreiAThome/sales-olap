@@ -6,18 +6,14 @@ from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
-import logging
+from util.logging_config import get_logger
 from sqlalchemy.dialects.mysql import insert
 
 from util.utils import parse_date
 
-BATCH_SIZE = 50_000
+BATCH_SIZE = 50_000 # decrease if low ram
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+logger = get_logger(__name__)
 
 
 def extract_orders_with_items():
@@ -36,10 +32,10 @@ def extract_orders_with_items():
         ).join(orderitems, orderitems.c.OrderId == orders.c.id)
 
         result = session.execute(stmt).mappings().all()
-        logging.info(f"Extracted {len(result)} raw joined order+item rows")
+        logger.info(f"Extracted {len(result)} raw joined order+item rows")
         return result
     except Exception as e:
-        logging.error(f"Error extracting joined orders+items: {e}", exc_info=True)
+        logger.error(f"Error extracting joined orders+items: {e}", exc_info=True)
         return []
     finally:
         session.close()
@@ -58,10 +54,10 @@ def clean_orders_with_items(data):
             df["notes"] = df["notes"].fillna("").astype(str).str.strip()
 
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned {len(cleaned_data)} joined order+item rows")
+        logger.info(f"Cleaned {len(cleaned_data)} joined order+item rows")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning joined orders+items: {e}", exc_info=True)
+        logger.error(f"Error cleaning joined orders+items: {e}", exc_info=True)
         return []
 
 
@@ -146,10 +142,10 @@ def load_transform_date_and_order_items():
             session.execute(stmt)
 
         session.commit()
-        logging.info("Finished upserting Fact_Order_Items")
+        logger.info("Finished upserting Fact_Order_Items")
 
     except Exception as e:
         session.rollback()
-        logging.error(f"Error in load/transform: {e}", exc_info=True)
+        logger.error(f"Error in load/transform: {e}", exc_info=True)
     finally:
         session.close()
