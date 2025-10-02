@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
-from util.db_source import db_source_engine, Session_db_source, metadata_source
+from etl_scripts.products_etl import transform_and_load_products
+from etl_scripts.users_etl import transform_and_load_users
+from util.db_source import db_source_engine
 from util.db_warehouse import db_warehouse_engine, Session_db_warehouse
 from sqlalchemy import text
 from etl_scripts.rider_etl import transform_and_load_riders
@@ -18,12 +20,23 @@ def main():
 
     # Run the ETL process for riders
     transform_and_load_riders()
+    transform_and_load_products()
+    transform_and_load_users()
 
     # show all the transformed data in the Dim_Riders table
     session = Session_db_warehouse()
-    result = session.execute(text("SELECT * FROM dim_riders"))
-    for row in result:
+    result_riders = session.execute(text("SELECT * FROM dim_riders LIMIT 10"))
+    for row in result_riders:
         print(row)
+
+    result_products = session.execute(text("SELECT * FROM dim_products LIMIT 10"))
+    for product in result_products:
+        print(product)
+
+    result_users = session.execute(text("SELECT * FROM dim_users LIMIT 10"))
+    for user in result_users:
+        print(user)
+
     session.close()
 
 

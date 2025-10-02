@@ -7,7 +7,11 @@ load_dotenv()
 
 # Source Database
 database_source_url = os.getenv("DATABASE_SOURCE_URL")
-db_source_engine = create_engine(database_source_url, echo=True)
+if not database_source_url:
+    raise ValueError("DATABASE_SOURCE_URL is not set in environment variables")
+db_source_engine = create_engine(
+    database_source_url, echo=False
+)  # set to False for production
 Session_db_source = sessionmaker(bind=db_source_engine)
 
 metadata_source = MetaData()
