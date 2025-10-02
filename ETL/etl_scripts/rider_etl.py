@@ -4,7 +4,7 @@ import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
 import logging
-from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,26 +98,25 @@ def transform_and_load_riders():
             for rider in cleaned_riders
         ]
 
-        # --- Hybrid UPSERT logic ---
-        existing_ids = set(
-            row[0] for row in session.execute(select(Dim_Rider.Rider_ID)).all()
-        )
+        if rider_records:
+            stmt = insert(Dim_Rider).values(rider_records)
 
-        new_records = [r for r in rider_records if r["Rider_ID"] not in existing_ids]
-        update_records = [r for r in rider_records if r["Rider_ID"] in existing_ids]
+            # Define how to update existing Rider_ID rows
+            stmt = stmt.on_duplicate_key_update(
+                First_Name=stmt.inserted.First_Name,
+                Last_Name=stmt.inserted.Last_Name,
+                Vehicle_Type=stmt.inserted.Vehicle_Type,
+                Age=stmt.inserted.Age,
+                Gender=stmt.inserted.Gender,
+                Courier_Name=stmt.inserted.Courier_Name,
+            )
 
-        if new_records:
-            session.bulk_insert_mappings(Dim_Rider, new_records)
-            logging.info(f"Inserted {len(new_records)} new riders.")
-
-        if update_records:
-            session.bulk_update_mappings(Dim_Rider, update_records)
-            logging.info(f"Updated {len(update_records)} existing riders.")
-
-        session.commit()
+            session.execute(stmt)
+            session.commit()
+            logging.info(f"Upserted {len(rider_records)} riders in one SQL statement.")
 
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}", exc_info=True)
+        logging.error(f"Error during transform/load riders: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

@@ -1,5 +1,5 @@
 from util.db_source import products
-from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert
 from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
@@ -63,25 +63,23 @@ def transform_and_load_products():
             for product in cleaned_products
         ]
 
-        # --- Hybrid UPSERT logic ---
-        existing_ids = set(
-            row[0] for row in session.execute(select(Dim_Products.Product_ID)).all()
-        )
+        if product_records:
+            stmt = insert(Dim_Products).values(product_records)
 
-        new_records = [
-            r for r in product_records if r["Product_ID"] not in existing_ids
-        ]
-        update_records = [r for r in product_records if r["Product_ID"] in existing_ids]
+            # Define update behavior if Product_ID already exists
+            stmt = stmt.on_duplicate_key_update(
+                Product_Code=stmt.inserted.Product_Code,
+                Name=stmt.inserted.Name,
+                Category=stmt.inserted.Category,
+                Description=stmt.inserted.Description,
+                Price=stmt.inserted.Price,
+            )
 
-        if new_records:
-            session.bulk_insert_mappings(Dim_Products, new_records)
-            logging.info(f"Inserted {len(new_records)} new products.")
-
-        if update_records:
-            session.bulk_update_mappings(Dim_Products, update_records)
-            logging.info(f"Updated {len(update_records)} existing products.")
-
-        session.commit()
+            session.execute(stmt)
+            session.commit()
+            logging.info(
+                f"Upserted {len(product_records)} products in one SQL statement."
+            )
 
     except Exception as e:
         logging.error(f"Error during transform/load: {e}", exc_info=True)

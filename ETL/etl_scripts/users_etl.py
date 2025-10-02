@@ -4,9 +4,9 @@ import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
 import logging
-from sqlalchemy import select
 from util.utils import parse_date
 from util.utils import clean_phone_number
+from sqlalchemy.dialects.mysql import insert
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,26 +86,30 @@ def transform_and_load_users():
             for user in cleaned_users
         ]
 
-        # --- Hybrid UPSERT logic ---
-        existing_ids = set(
-            row[0] for row in session.execute(select(Dim_Users.Users_ID)).all()
-        )
+        if user_records:
+            stmt = insert(Dim_Users).values(user_records)
 
-        new_records = [r for r in user_records if r["Users_ID"] not in existing_ids]
-        update_records = [r for r in user_records if r["Users_ID"] in existing_ids]
+            # Define how to update if Users_ID already exists
+            stmt = stmt.on_duplicate_key_update(
+                Username=stmt.inserted.Username,
+                First_Name=stmt.inserted.First_Name,
+                Last_Name=stmt.inserted.Last_Name,
+                Birth_Date=stmt.inserted.Birth_Date,
+                Address_1=stmt.inserted.Address_1,
+                Address_2=stmt.inserted.Address_2,
+                City=stmt.inserted.City,
+                Country=stmt.inserted.Country,
+                Zipcode=stmt.inserted.Zipcode,
+                Phone_Number=stmt.inserted.Phone_Number,
+                Gender=stmt.inserted.Gender,
+            )
 
-        if new_records:
-            session.bulk_insert_mappings(Dim_Users, new_records)
-            logging.info(f"Inserted {len(new_records)} new users.")
-
-        if update_records:
-            session.bulk_update_mappings(Dim_Users, update_records)
-            logging.info(f"Updated {len(update_records)} existing users.")
-
-        session.commit()
+            session.execute(stmt)
+            session.commit()
+            logging.info(f"Upserted {len(user_records)} users in one SQL statement.")
 
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}", exc_info=True)
+        logging.error(f"Error during transform/load users: {e}", exc_info=True)
         session.rollback()
     finally:
         session.close()

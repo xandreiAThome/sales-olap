@@ -133,7 +133,6 @@ def load_transform_date_and_order_items():
                     Notes=stmt.inserted.Notes,
                 )
                 session.execute(stmt)
-                session.commit()
                 fact_buffer.clear()
 
         # final flush
@@ -145,8 +144,8 @@ def load_transform_date_and_order_items():
                 Notes=stmt.inserted.Notes,
             )
             session.execute(stmt)
-            session.commit()
 
+        session.commit()
         logging.info("Finished upserting Fact_Order_Items")
 
     except Exception as e:
