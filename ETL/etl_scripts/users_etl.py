@@ -23,7 +23,9 @@ def extract_users_stream():
     session = Session_db_source()
     result = None
     try:
-        result = session.execute(users.select().execution_options(stream_results=True)).mappings()
+        result = session.execute(
+            users.select().execution_options(stream_results=True)
+        ).mappings()
         yield result
     except Exception as e:
         logger.error(f"Error streaming users: {e}")
@@ -67,6 +69,24 @@ def clean_users_data(data):
         )
         df["phoneNumber"] = df["phoneNumber"].apply(clean_phone_number)
 
+        df = df.rename(
+            columns={
+                "id": "Users_ID",
+                "username": "Username",
+                "firstName": "First_Name",
+                "lastName": "Last_Name",
+                "dateOfBirth": "Birth_Date",
+                "address1": "Address_1",
+                "address2": "Address_2",
+                "city": "City",
+                "country": "Country",
+                "zipCode": "Zipcode",
+                "phoneNumber": "Phone_Number",
+                "gender": "Gender",
+            }
+        )
+        df.drop(columns=["dateOfBirthClean", "createdAt", "updatedAt"], inplace=True)
+
         cleaned_data = df.to_dict(orient="records")
         # logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
         return cleaned_data
@@ -86,25 +106,7 @@ def transform_and_load_users():
                     break
 
                 # Use centralized cleaning function on the DataFrame chunk
-                cleaned = clean_users_data(pd.DataFrame([dict(r) for r in chunk_rows]))
-                records = [
-                    {
-                        "Users_ID": u["id"],
-                        "Username": u["username"],
-                        "First_Name": u["firstName"],
-                        "Last_Name": u["lastName"],
-                        "Birth_Date": u["dateOfBirth"],
-                        "Address_1": u["address1"],
-                        "Address_2": u["address2"],
-                        "City": u["city"],
-                        "Country": u["country"],
-                        "Zipcode": u["zipCode"],
-                        "Phone_Number": u["phoneNumber"],
-                        "Gender": u["gender"],
-                    }
-                    for u in cleaned
-                ]
-
+                records = clean_users_data(chunk_rows)
                 if records:
                     stmt = insert(Dim_Users).values(records)
                     stmt = stmt.on_duplicate_key_update(
@@ -135,4 +137,3 @@ def transform_and_load_users():
         raise
     finally:
         db_session.close()
-        

@@ -95,7 +95,9 @@ def load_transform_date_and_order_items():
 
             # Keep an in-memory cache of existing dates to avoid repeated full-table scans
             date_lookup = dict(
-                wh_session.execute(select(Dim_Date.Date, Dim_Date.Date_ID)).tuples().all()
+                wh_session.execute(select(Dim_Date.Date, Dim_Date.Date_ID))
+                .tuples()
+                .all()
             )
 
             while True:
@@ -104,7 +106,9 @@ def load_transform_date_and_order_items():
                     break
 
                 # Clean chunk
-                cleaned = clean_orders_with_items(pd.DataFrame([dict(r) for r in chunk_rows]))
+                cleaned = clean_orders_with_items(
+                    pd.DataFrame([dict(r) for r in chunk_rows])
+                )
 
                 # Identify new dates in this chunk and insert into Dim_Date
                 unique_dates = (
@@ -128,16 +132,22 @@ def load_transform_date_and_order_items():
                         )
 
                 if new_date_records:
-                    stmt = insert(Dim_Date).prefix_with("IGNORE").values(new_date_records)
+                    stmt = (
+                        insert(Dim_Date).prefix_with("IGNORE").values(new_date_records)
+                    )
                     wh_session.execute(stmt)
                     wh_session.commit()
 
                     # refresh date_lookup for the newly inserted dates
-                    refreshed = wh_session.execute(
-                        select(Dim_Date.Date, Dim_Date.Date_ID).where(
-                            Dim_Date.Date.in_([r["Date"] for r in new_date_records])
+                    refreshed = (
+                        wh_session.execute(
+                            select(Dim_Date.Date, Dim_Date.Date_ID).where(
+                                Dim_Date.Date.in_([r["Date"] for r in new_date_records])
+                            )
                         )
-                    ).tuples().all()
+                        .tuples()
+                        .all()
+                    )
                     for d, did in refreshed:
                         date_lookup[d] = did
 
@@ -147,7 +157,9 @@ def load_transform_date_and_order_items():
                     delivery_date = row.get("deliveryDate")
                     delivery_date_id = None
                     if pd.notna(delivery_date):
-                        delivery_date_id = date_lookup.get(pd.to_datetime(delivery_date).date())
+                        delivery_date_id = date_lookup.get(
+                            pd.to_datetime(delivery_date).date()
+                        )
 
                     price = float(product_lookup.get(row.get("ProductId"), 0) or 0)
                     total_revenue = (row.get("quantity") or 0) * price
@@ -189,4 +201,3 @@ def load_transform_date_and_order_items():
         raise
     finally:
         wh_session.close()
-

@@ -21,7 +21,9 @@ def extract_products_stream():
     session = Session_db_source()
     result = None
     try:
-        result = session.execute(products.select().execution_options(stream_results=True)).mappings()
+        result = session.execute(
+            products.select().execution_options(stream_results=True)
+        ).mappings()
         yield result
     except Exception as e:
         logger.error(f"Error streaming products: {e}")
@@ -50,6 +52,18 @@ def clean_products_data(data):
         df["description"] = df["description"].str.strip()
         df["name"] = df["name"].str.title().str.strip()
 
+        df = df.rename(
+            columns={
+                "productCode": "Product_Code",
+                "id": "Product_ID",
+                "name": "Name",
+                "category": "Category",
+                "description": "Description",
+                "price": "Price",
+            }
+        )
+        df.drop(columns=["createdAt", "updatedAt"], errors="ignore", inplace=True)
+
         cleaned_data = df.to_dict(orient="records")
         # logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
         return cleaned_data
@@ -69,19 +83,7 @@ def transform_and_load_products():
                 if not chunk_rows:
                     break
 
-                # Clean per chunk using the centralized function
-                cleaned = clean_products_data(pd.DataFrame([dict(r) for r in chunk_rows]))
-                records = [
-                    {
-                        "Product_Code": r["productCode"],
-                        "Product_ID": r["id"],
-                        "Name": r["name"],
-                        "Category": r["category"],
-                        "Description": r["description"],
-                        "Price": r["price"],
-                    }
-                    for r in cleaned
-                ]
+                records = clean_products_data(chunk_rows)
 
                 if records:
                     stmt = insert(Dim_Products).values(records)
