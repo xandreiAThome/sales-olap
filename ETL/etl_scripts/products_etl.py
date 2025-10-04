@@ -1,35 +1,50 @@
 from util.db_source import products
-from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert
 from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
+from contextlib import contextmanager
 from util.db_warehouse import Session_db_warehouse
-import logging
+from util.logging_config import get_logger
+import itertools
+import os
+import gc
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 2000)
+
+logger = get_logger(__name__)
 
 
-def extract_products():
+@contextmanager
+def extract_products_stream():
+    """Context-managed stream of products rows from source DB as mappings."""
     session = Session_db_source()
+    result = None
     try:
-        result = session.execute(products.select())
-        products_data = result.fetchall()
-        logging.info(f"Extracted {len(products_data)} products from source DB.")
-        return products_data
+        result = session.execute(
+            products.select().execution_options(stream_results=True)
+        ).mappings()
+        yield result
     except Exception as e:
-        logging.error(f"Error extracting products: {e}")
-        return []
+        logger.error(f"Error streaming products: {e}")
+        return
     finally:
+        try:
+            if result is not None:
+                result.close()
+        except Exception:
+            pass
         session.close()
 
 
 def clean_products_data(data):
     try:
-        df = pd.DataFrame([dict(row._mapping) for row in data])
+        # Accept either a pandas DataFrame or an iterable of row mappings
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            df = pd.DataFrame([dict(r) for r in data])
+
         df.dropna(inplace=True)
 
         df["productCode"] = df["productCode"].str.strip()
@@ -37,54 +52,61 @@ def clean_products_data(data):
         df["description"] = df["description"].str.strip()
         df["name"] = df["name"].str.title().str.strip()
 
+        df = df.rename(
+            columns={
+                "productCode": "Product_Code",
+                "id": "Product_ID",
+                "name": "Name",
+                "category": "Category",
+                "description": "Description",
+                "price": "Price",
+            }
+        )
+        df.drop(columns=["createdAt", "updatedAt"], errors="ignore", inplace=True)
+
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
+        # logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning products data: {e}")
+        logger.error(f"Error cleaning products data: {e}")
         return []
 
 
 def transform_and_load_products():
-    products_data = extract_products()
-    cleaned_products = clean_products_data(products_data)
-
-    session = Session_db_warehouse()
+    # Stream-extract -> chunk -> clean -> upsert per chunk
+    conn_session = Session_db_warehouse()
+    total_inserted = 0
     try:
-        product_records = [
-            {
-                "Product_Code": product["productCode"],
-                "Product_ID": product["id"],
-                "Name": product["name"],
-                "Category": product["category"],
-                "Description": product["description"],
-                "Price": product["price"],
-            }
-            for product in cleaned_products
-        ]
+        with extract_products_stream() as prod_iter:
+            while True:
+                chunk_rows = list(itertools.islice(prod_iter, BATCH_SIZE))
+                if not chunk_rows:
+                    break
 
-        # --- Hybrid UPSERT logic ---
-        existing_ids = set(
-            row[0] for row in session.execute(select(Dim_Products.Product_ID)).all()
-        )
+                records = clean_products_data(chunk_rows)
 
-        new_records = [
-            r for r in product_records if r["Product_ID"] not in existing_ids
-        ]
-        update_records = [r for r in product_records if r["Product_ID"] in existing_ids]
+                if records:
+                    stmt = insert(Dim_Products).values(records)
+                    stmt = stmt.on_duplicate_key_update(
+                        Product_Code=stmt.inserted.Product_Code,
+                        Name=stmt.inserted.Name,
+                        Category=stmt.inserted.Category,
+                        Description=stmt.inserted.Description,
+                        Price=stmt.inserted.Price,
+                    )
+                    conn_session.execute(stmt)
+                    conn_session.commit()
+                    total_inserted += len(records)
 
-        if new_records:
-            session.bulk_insert_mappings(Dim_Products, new_records)
-            logging.info(f"Inserted {len(new_records)} new products.")
+                # cleanup chunk
+                del records, chunk_rows
+                gc.collect()
 
-        if update_records:
-            session.bulk_update_mappings(Dim_Products, update_records)
-            logging.info(f"Updated {len(update_records)} existing products.")
-
-        session.commit()
+        logger.info(f"Upserted {total_inserted} products in batches of {BATCH_SIZE}")
 
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}", exc_info=True)
-        session.rollback()
+        logger.error(f"Error during transform/load: {e}", exc_info=True)
+        conn_session.rollback()
+        raise
     finally:
-        session.close()
+        conn_session.close()
