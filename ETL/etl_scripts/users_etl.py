@@ -2,32 +2,49 @@ from util.db_source import users
 from models.Dim_Users import Dim_Users
 import pandas as pd
 from util.db_source import Session_db_source
+from contextlib import contextmanager
 from util.db_warehouse import Session_db_warehouse
 from util.logging_config import get_logger
 from util.utils import parse_date
 from util.utils import clean_phone_number
 from sqlalchemy.dialects.mysql import insert
+import itertools
+import os
+
+BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 2000)
+import gc
 
 logger = get_logger(__name__)
 
 
-def extract_users():
+@contextmanager
+def extract_users_stream():
+    """Context-managed stream of users rows from source DB as mappings."""
     session = Session_db_source()
+    result = None
     try:
-        result = session.execute(users.select())
-        users_data = result.fetchall()
-        logger.info(f"Extracted {len(users_data)} users from source DB.")
-        return users_data
+        result = session.execute(users.select().execution_options(stream_results=True)).mappings()
+        yield result
     except Exception as e:
-        logger.error(f"Error extracting users: {e}")
-        return []
+        logger.error(f"Error streaming users: {e}")
+        return
     finally:
+        try:
+            if result is not None:
+                result.close()
+        except Exception:
+            pass
         session.close()
 
 
 def clean_users_data(data):
     try:
-        df = pd.DataFrame([dict(row._mapping) for row in data])
+        # Accept either a pandas DataFrame or an iterable of mappings
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            df = pd.DataFrame([dict(r) for r in data])
+
         df.dropna(inplace=True)
 
         df["username"] = df["username"].str.strip()
@@ -51,7 +68,7 @@ def clean_users_data(data):
         df["phoneNumber"] = df["phoneNumber"].apply(clean_phone_number)
 
         cleaned_data = df.to_dict(orient="records")
-        logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
+        # logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
         logger.error(f"Error cleaning users data: {e}")
@@ -59,53 +76,63 @@ def clean_users_data(data):
 
 
 def transform_and_load_users():
-    users_data = extract_users()
-    cleaned_users = clean_users_data(users_data)
-
-    session = Session_db_warehouse()
+    db_session = Session_db_warehouse()
+    total_inserted = 0
     try:
-        user_records = [
-            {
-                "Users_ID": user["id"],
-                "Username": user["username"],
-                "First_Name": user["firstName"],
-                "Last_Name": user["lastName"],
-                "Birth_Date": user["dateOfBirth"],
-                "Address_1": user["address1"],
-                "Address_2": user["address2"],
-                "City": user["city"],
-                "Country": user["country"],
-                "Zipcode": user["zipCode"],
-                "Phone_Number": user["phoneNumber"],
-                "Gender": user["gender"],
-            }
-            for user in cleaned_users
-        ]
+        with extract_users_stream() as user_iter:
+            while True:
+                chunk_rows = list(itertools.islice(user_iter, BATCH_SIZE))
+                if not chunk_rows:
+                    break
 
-        if user_records:
-            stmt = insert(Dim_Users).values(user_records)
+                # Use centralized cleaning function on the DataFrame chunk
+                cleaned = clean_users_data(pd.DataFrame([dict(r) for r in chunk_rows]))
+                records = [
+                    {
+                        "Users_ID": u["id"],
+                        "Username": u["username"],
+                        "First_Name": u["firstName"],
+                        "Last_Name": u["lastName"],
+                        "Birth_Date": u["dateOfBirth"],
+                        "Address_1": u["address1"],
+                        "Address_2": u["address2"],
+                        "City": u["city"],
+                        "Country": u["country"],
+                        "Zipcode": u["zipCode"],
+                        "Phone_Number": u["phoneNumber"],
+                        "Gender": u["gender"],
+                    }
+                    for u in cleaned
+                ]
 
-            # Define how to update if Users_ID already exists
-            stmt = stmt.on_duplicate_key_update(
-                Username=stmt.inserted.Username,
-                First_Name=stmt.inserted.First_Name,
-                Last_Name=stmt.inserted.Last_Name,
-                Birth_Date=stmt.inserted.Birth_Date,
-                Address_1=stmt.inserted.Address_1,
-                Address_2=stmt.inserted.Address_2,
-                City=stmt.inserted.City,
-                Country=stmt.inserted.Country,
-                Zipcode=stmt.inserted.Zipcode,
-                Phone_Number=stmt.inserted.Phone_Number,
-                Gender=stmt.inserted.Gender,
-            )
+                if records:
+                    stmt = insert(Dim_Users).values(records)
+                    stmt = stmt.on_duplicate_key_update(
+                        Username=stmt.inserted.Username,
+                        First_Name=stmt.inserted.First_Name,
+                        Last_Name=stmt.inserted.Last_Name,
+                        Birth_Date=stmt.inserted.Birth_Date,
+                        Address_1=stmt.inserted.Address_1,
+                        Address_2=stmt.inserted.Address_2,
+                        City=stmt.inserted.City,
+                        Country=stmt.inserted.Country,
+                        Zipcode=stmt.inserted.Zipcode,
+                        Phone_Number=stmt.inserted.Phone_Number,
+                        Gender=stmt.inserted.Gender,
+                    )
+                    db_session.execute(stmt)
+                    db_session.commit()
+                    total_inserted += len(records)
 
-            session.execute(stmt)
-            session.commit()
-            logger.info(f"Upserted {len(user_records)} users")
+                del records, chunk_rows
+                gc.collect()
+
+        logger.info(f"Upserted {total_inserted} users in batches of {BATCH_SIZE}")
 
     except Exception as e:
         logger.error(f"Error during transform/load users: {e}", exc_info=True)
-        session.rollback()
+        db_session.rollback()
+        raise
     finally:
-        session.close()
+        db_session.close()
+        

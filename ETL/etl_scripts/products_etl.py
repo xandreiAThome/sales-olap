@@ -3,29 +3,46 @@ from sqlalchemy.dialects.mysql import insert
 from models.Dim_Products import Dim_Products
 import pandas as pd
 from util.db_source import Session_db_source
+from contextlib import contextmanager
 from util.db_warehouse import Session_db_warehouse
 from util.logging_config import get_logger
+import itertools
+import os
+import gc
+
+BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 2000)
 
 logger = get_logger(__name__)
 
 
-def extract_products():
+@contextmanager
+def extract_products_stream():
+    """Context-managed stream of products rows from source DB as mappings."""
     session = Session_db_source()
+    result = None
     try:
-        result = session.execute(products.select())
-        products_data = result.fetchall()
-        logger.info(f"Extracted {len(products_data)} products from source DB.")
-        return products_data
+        result = session.execute(products.select().execution_options(stream_results=True)).mappings()
+        yield result
     except Exception as e:
-        logger.error(f"Error extracting products: {e}")
-        return []
+        logger.error(f"Error streaming products: {e}")
+        return
     finally:
+        try:
+            if result is not None:
+                result.close()
+        except Exception:
+            pass
         session.close()
 
 
 def clean_products_data(data):
     try:
-        df = pd.DataFrame([dict(row._mapping) for row in data])
+        # Accept either a pandas DataFrame or an iterable of row mappings
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            df = pd.DataFrame([dict(r) for r in data])
+
         df.dropna(inplace=True)
 
         df["productCode"] = df["productCode"].str.strip()
@@ -34,7 +51,7 @@ def clean_products_data(data):
         df["name"] = df["name"].str.title().str.strip()
 
         cleaned_data = df.to_dict(orient="records")
-        logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
+        # logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
         logger.error(f"Error cleaning products data: {e}")
@@ -42,43 +59,52 @@ def clean_products_data(data):
 
 
 def transform_and_load_products():
-    products_data = extract_products()
-    cleaned_products = clean_products_data(products_data)
-
-    session = Session_db_warehouse()
+    # Stream-extract -> chunk -> clean -> upsert per chunk
+    conn_session = Session_db_warehouse()
+    total_inserted = 0
     try:
-        product_records = [
-            {
-                "Product_Code": product["productCode"],
-                "Product_ID": product["id"],
-                "Name": product["name"],
-                "Category": product["category"],
-                "Description": product["description"],
-                "Price": product["price"],
-            }
-            for product in cleaned_products
-        ]
+        with extract_products_stream() as prod_iter:
+            while True:
+                chunk_rows = list(itertools.islice(prod_iter, BATCH_SIZE))
+                if not chunk_rows:
+                    break
 
-        if product_records:
-            stmt = insert(Dim_Products).values(product_records)
+                # Clean per chunk using the centralized function
+                cleaned = clean_products_data(pd.DataFrame([dict(r) for r in chunk_rows]))
+                records = [
+                    {
+                        "Product_Code": r["productCode"],
+                        "Product_ID": r["id"],
+                        "Name": r["name"],
+                        "Category": r["category"],
+                        "Description": r["description"],
+                        "Price": r["price"],
+                    }
+                    for r in cleaned
+                ]
 
-            # Define update behavior if Product_ID already exists
-            stmt = stmt.on_duplicate_key_update(
-                Product_Code=stmt.inserted.Product_Code,
-                Name=stmt.inserted.Name,
-                Category=stmt.inserted.Category,
-                Description=stmt.inserted.Description,
-                Price=stmt.inserted.Price,
-            )
+                if records:
+                    stmt = insert(Dim_Products).values(records)
+                    stmt = stmt.on_duplicate_key_update(
+                        Product_Code=stmt.inserted.Product_Code,
+                        Name=stmt.inserted.Name,
+                        Category=stmt.inserted.Category,
+                        Description=stmt.inserted.Description,
+                        Price=stmt.inserted.Price,
+                    )
+                    conn_session.execute(stmt)
+                    conn_session.commit()
+                    total_inserted += len(records)
 
-            session.execute(stmt)
-            session.commit()
-            logger.info(
-                f"Upserted {len(product_records)} products"
-            )
+                # cleanup chunk
+                del records, chunk_rows
+                gc.collect()
+
+        logger.info(f"Upserted {total_inserted} products in batches of {BATCH_SIZE}")
 
     except Exception as e:
         logger.error(f"Error during transform/load: {e}", exc_info=True)
-        session.rollback()
+        conn_session.rollback()
+        raise
     finally:
-        session.close()
+        conn_session.close()
