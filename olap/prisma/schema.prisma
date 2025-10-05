@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model dim_date {
+  Date_ID          Int                @id @unique(map: "Date_ID") @default(autoincrement())
+  Date             DateTime           @unique(map: "Date") @db.Date
+  Year             Int
+  Month            Int
+  Day              Int
+  Quarter          Int
+  fact_order_items fact_order_items[]
+}
+
+model dim_products {
+  Product_ID       Int                @id @unique(map: "Product_ID") @default(autoincrement())
+  Product_Code     String             @db.VarChar(20)
+  Category         String             @db.VarChar(50)
+  Description      String             @db.VarChar(255)
+  Name             String             @db.VarChar(100)
+  Price            Decimal            @db.Decimal(10, 2)
+  fact_order_items fact_order_items[]
+}
+
+model dim_riders {
+  Rider_ID         Int                @id @unique(map: "Rider_ID") @default(autoincrement())
+  First_Name       String             @db.VarChar(40)
+  Last_Name        String             @db.VarChar(40)
+  Vehicle_Type     String             @db.VarChar(40)
+  Age              Int
+  Gender           String             @db.VarChar(6)
+  Courier_Name     String             @db.VarChar(20)
+  fact_order_items fact_order_items[]
+}
+
+model dim_users {
+  Users_ID         Int                @id @unique(map: "Users_ID") @default(autoincrement())
+  Username         String             @db.VarChar(50)
+  First_Name       String             @db.VarChar(40)
+  Last_Name        String             @db.VarChar(40)
+  Address_1        String             @db.VarChar(100)
+  Address_2        String?            @db.VarChar(100)
+  City             String             @db.VarChar(50)
+  Country          String             @db.VarChar(100)
+  Zipcode          String             @db.VarChar(20)
+  Phone_Number     String             @db.VarChar(15)
+  Birth_Date       DateTime           @db.Date
+  Gender           String             @db.VarChar(6)
+  fact_order_items fact_order_items[]
+}
+
+model fact_order_items {
+  Order_Item_ID     Int          @id @unique(map: "Order_Item_ID") @default(autoincrement())
+  Product_ID        Int
+  Quantity          Int
+  Notes             String?      @db.VarChar(100)
+  Delivery_Date_ID  Int
+  Delivery_Rider_ID Int
+  User_ID           Int
+  Order_Num         String       @db.VarChar(20)
+  Total_Revenue     Decimal      @db.Decimal(10, 2)
+  dim_products      dim_products @relation(fields: [Product_ID], references: [Product_ID], onDelete: NoAction, onUpdate: NoAction, map: "fact_order_items_ibfk_1")
+  dim_date          dim_date     @relation(fields: [Delivery_Date_ID], references: [Date_ID], onDelete: NoAction, onUpdate: NoAction, map: "fact_order_items_ibfk_2")
+  dim_riders        dim_riders   @relation(fields: [Delivery_Rider_ID], references: [Rider_ID], onDelete: NoAction, onUpdate: NoAction, map: "fact_order_items_ibfk_3")
+  dim_users         dim_users    @relation(fields: [User_ID], references: [Users_ID], onDelete: NoAction, onUpdate: NoAction, map: "fact_order_items_ibfk_4")
+
+  @@index([Delivery_Date_ID], map: "Delivery_Date_ID")
+  @@index([Delivery_Rider_ID], map: "Delivery_Rider_ID")
+  @@index([Product_ID], map: "Product_ID")
+  @@index([User_ID], map: "User_ID")
+}
