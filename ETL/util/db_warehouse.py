@@ -8,6 +8,8 @@ from models.base import Base
 from models.Dim_Riders import Dim_Rider
 from models.Dim_Products import Dim_Products
 from models.Dim_Users import Dim_Users
+from models.Dim_Date import Dim_Date
+from models.Fact_Order_Items import Fact_Order_Items
 
 load_dotenv()
 

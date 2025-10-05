@@ -2,60 +2,51 @@ from util.db_source import users
 from models.Dim_Users import Dim_Users
 import pandas as pd
 from util.db_source import Session_db_source
+from contextlib import contextmanager
 from util.db_warehouse import Session_db_warehouse
-import re
-import logging
-from sqlalchemy import select
+from util.logging_config import get_logger
+from util.utils import parse_date
+from util.utils import clean_phone_number
+from sqlalchemy.dialects.mysql import insert
+import itertools
+import os
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 2000)
+import gc
+
+logger = get_logger(__name__)
 
 
-def extract_users():
+@contextmanager
+def extract_users_stream():
+    """Context-managed stream of users rows from source DB as mappings."""
     session = Session_db_source()
+    result = None
     try:
-        result = session.execute(users.select())
-        users_data = result.fetchall()
-        logging.info(f"Extracted {len(users_data)} users from source DB.")
-        return users_data
+        result = session.execute(
+            users.select().execution_options(stream_results=True)
+        ).mappings()
+        yield result
     except Exception as e:
-        logging.error(f"Error extracting users: {e}")
-        return []
+        logger.error(f"Error streaming users: {e}")
+        return
     finally:
-        session.close()
-
-
-def clean_phone_number(phone: str):
-    phone = phone.strip()
-    num = re.sub(r"x.*$", "", phone)  # Remove extension
-    digits = re.sub(r"\D", "", num)  # Keep only digits
-    if len(digits) == 11:
-        digits = digits[1:]
-
-    if len(digits) == 10:
-        return f"{digits[0:3]}-{digits[3:6]}-{digits[6:10]}"
-    return digits  # Return as is if not 10 digits/malformed
-
-
-def parse_date(x):
-    x = str(x).strip()
-    try:
-        # Try ISO format first (YYYY-MM-DD)
-        return pd.to_datetime(x, format="%Y-%m-%d", errors="raise")
-    except Exception:
         try:
-            # Try US format (MM/DD/YYYY)
-            return pd.to_datetime(x, format="%m/%d/%Y", errors="raise")
+            if result is not None:
+                result.close()
         except Exception:
-            return pd.NaT
+            pass
+        session.close()
 
 
 def clean_users_data(data):
     try:
-        df = pd.DataFrame([dict(row._mapping) for row in data])
+        # Accept either a pandas DataFrame or an iterable of mappings
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            df = pd.DataFrame([dict(r) for r in data])
+
         df.dropna(inplace=True)
 
         df["username"] = df["username"].str.strip()
@@ -78,58 +69,71 @@ def clean_users_data(data):
         )
         df["phoneNumber"] = df["phoneNumber"].apply(clean_phone_number)
 
+        df = df.rename(
+            columns={
+                "id": "Users_ID",
+                "username": "Username",
+                "firstName": "First_Name",
+                "lastName": "Last_Name",
+                "dateOfBirth": "Birth_Date",
+                "address1": "Address_1",
+                "address2": "Address_2",
+                "city": "City",
+                "country": "Country",
+                "zipCode": "Zipcode",
+                "phoneNumber": "Phone_Number",
+                "gender": "Gender",
+            }
+        )
+        df.drop(columns=["dateOfBirthClean", "createdAt", "updatedAt"], inplace=True)
+
         cleaned_data = df.to_dict(orient="records")
-        logging.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
+        # logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
         return cleaned_data
     except Exception as e:
-        logging.error(f"Error cleaning users data: {e}")
+        logger.error(f"Error cleaning users data: {e}")
         return []
 
 
 def transform_and_load_users():
-    users_data = extract_users()
-    cleaned_users = clean_users_data(users_data)
-
-    session = Session_db_warehouse()
+    db_session = Session_db_warehouse()
+    total_inserted = 0
     try:
-        user_records = [
-            {
-                "Users_ID": user["id"],
-                "Username": user["username"],
-                "First_Name": user["firstName"],
-                "Last_Name": user["lastName"],
-                "Birth_Date": user["dateOfBirth"],
-                "Address_1": user["address1"],
-                "Address_2": user["address2"],
-                "City": user["city"],
-                "Country": user["country"],
-                "Zipcode": user["zipCode"],
-                "Phone_Number": user["phoneNumber"],
-                "Gender": user["gender"],
-            }
-            for user in cleaned_users
-        ]
+        with extract_users_stream() as user_iter:
+            while True:
+                chunk_rows = list(itertools.islice(user_iter, BATCH_SIZE))
+                if not chunk_rows:
+                    break
 
-        # --- Hybrid UPSERT logic ---
-        existing_ids = set(
-            row[0] for row in session.execute(select(Dim_Users.Users_ID)).all()
-        )
+                # Use centralized cleaning function on the DataFrame chunk
+                records = clean_users_data(chunk_rows)
+                if records:
+                    stmt = insert(Dim_Users).values(records)
+                    stmt = stmt.on_duplicate_key_update(
+                        Username=stmt.inserted.Username,
+                        First_Name=stmt.inserted.First_Name,
+                        Last_Name=stmt.inserted.Last_Name,
+                        Birth_Date=stmt.inserted.Birth_Date,
+                        Address_1=stmt.inserted.Address_1,
+                        Address_2=stmt.inserted.Address_2,
+                        City=stmt.inserted.City,
+                        Country=stmt.inserted.Country,
+                        Zipcode=stmt.inserted.Zipcode,
+                        Phone_Number=stmt.inserted.Phone_Number,
+                        Gender=stmt.inserted.Gender,
+                    )
+                    db_session.execute(stmt)
+                    db_session.commit()
+                    total_inserted += len(records)
 
-        new_records = [r for r in user_records if r["Users_ID"] not in existing_ids]
-        update_records = [r for r in user_records if r["Users_ID"] in existing_ids]
+                del records, chunk_rows
+                gc.collect()
 
-        if new_records:
-            session.bulk_insert_mappings(Dim_Users, new_records)
-            logging.info(f"Inserted {len(new_records)} new users.")
-
-        if update_records:
-            session.bulk_update_mappings(Dim_Users, update_records)
-            logging.info(f"Updated {len(update_records)} existing users.")
-
-        session.commit()
+        logger.info(f"Upserted {total_inserted} users in batches of {BATCH_SIZE}")
 
     except Exception as e:
-        logging.error(f"Error during transform/load: {e}", exc_info=True)
-        session.rollback()
+        logger.error(f"Error during transform/load users: {e}", exc_info=True)
+        db_session.rollback()
+        raise
     finally:
-        session.close()
+        db_session.close()

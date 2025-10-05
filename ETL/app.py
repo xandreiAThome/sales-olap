@@ -5,39 +5,181 @@ from util.db_source import db_source_engine
 from util.db_warehouse import db_warehouse_engine, Session_db_warehouse
 from sqlalchemy import text
 from etl_scripts.rider_etl import transform_and_load_riders
+from etl_scripts.order_date_etl import load_transform_date_and_order_items
+from util.logging_config import setup_logging, get_logger
+import time
+import sys
+import gc  # For garbage collection
 
 load_dotenv()
 
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
+
+
+def test_database_connections():
+    """Test connections to both source and warehouse databases."""
+    try:
+        logger.info("Testing database connections...")
+
+        # Test source database
+        with db_source_engine.connect() as conn:
+            result = conn.execute(text("SELECT NOW()"))
+            source_time = result.scalar()
+            logger.info(f"Source DB connected! Server time: {source_time}")
+
+        # Test warehouse database
+        with db_warehouse_engine.connect() as conn:
+            result = conn.execute(text("SELECT NOW()"))
+            warehouse_time = result.scalar()
+            logger.info(f"Warehouse DB connected! Server time: {warehouse_time}")
+
+        return True
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}", exc_info=True)
+        return False
+
+
+def run_etl_step(step_name, etl_function):
+    """
+    Execute a single ETL step with error handling and logging.
+
+    Args:
+        step_name (str): Name of the ETL step for logging
+        etl_function (callable): The ETL function to execute
+
+    Returns:
+        bool: True if step succeeded, False otherwise
+    """
+    try:
+        logger.info(f"Starting ETL step: {step_name}")
+        start_time = time.time()
+
+        etl_function()
+
+        duration = time.time() - start_time
+        logger.info(f"Completed ETL step: {step_name} in {duration:.2f} seconds")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed ETL step: {step_name} - {e}", exc_info=True)
+        return False
+
+
+def display_sample_data():
+    """Display sample data from each dimension and fact table."""
+    try:
+        logger.info("Displaying sample data from transformed tables...")
+
+        session = Session_db_warehouse()
+
+        tables = [
+            ("dim_riders", "Riders"),
+            ("dim_products", "Products"),
+            ("dim_users", "Users"),
+            ("dim_date", "Date"),
+            ("fact_order_items", "Order Items"),
+        ]
+
+        for table_name, display_name in tables:
+            try:
+                result = session.execute(text(f"SELECT * FROM {table_name} LIMIT 5"))
+                rows = result.fetchall()
+                logger.info(f"Sample {display_name} data ({len(rows)} rows):")
+                for row in rows:
+                    logger.info(f"  {row}")
+            except Exception as e:
+                logger.warning(f"Could not fetch sample data from {table_name}: {e}")
+
+        session.close()
+
+    except Exception as e:
+        logger.error(f"Error displaying sample data: {e}", exc_info=True)
+
 
 def main():
-    with db_source_engine.connect() as conn:
-        result = conn.execute(text("SELECT NOW()"))
-        print("Connected! Server time:", result.scalar())
+    """
+    Main ETL pipeline orchestration with proper error handling and rollback.
+    """
+    logger.info("=" * 60)
+    logger.info("Starting ETL Pipeline")
+    logger.info("=" * 60)
 
-    with db_warehouse_engine.connect() as conn:
-        result = conn.execute(text("SELECT NOW()"))
-        print("Connected to Data Warehouse! Server time:", result.scalar())
+    start_time = time.time()
 
-    # Run the ETL process for riders
-    transform_and_load_riders()
-    transform_and_load_products()
-    transform_and_load_users()
+    try:
+        # Test database connections first
+        if not test_database_connections():
+            logger.error("Database connection tests failed. Aborting ETL pipeline.")
+            sys.exit(1)
 
-    # show all the transformed data in the Dim_Riders table
-    session = Session_db_warehouse()
-    result_riders = session.execute(text("SELECT * FROM dim_riders LIMIT 10"))
-    for row in result_riders:
-        print(row)
+        # Define ETL steps in execution order
+        etl_steps = [
+            ("Load Riders", transform_and_load_riders),
+            ("Load Products", transform_and_load_products),
+            ("Load Users", transform_and_load_users),
+            ("Load Dates and Order Items", load_transform_date_and_order_items),
+        ]
 
-    result_products = session.execute(text("SELECT * FROM dim_products LIMIT 10"))
-    for product in result_products:
-        print(product)
+        # Track step results
+        failed_steps = []
+        successful_steps = []
 
-    result_users = session.execute(text("SELECT * FROM dim_users LIMIT 10"))
-    for user in result_users:
-        print(user)
+        # Execute each ETL step
+        for step_name, etl_function in etl_steps:
+            if run_etl_step(step_name, etl_function):
+                successful_steps.append(step_name)
+            else:
+                failed_steps.append(step_name)
+                # Decide whether to continue or stop on failure
+                logger.warning(
+                    f"Step '{step_name}' failed, but continuing with remaining steps..."
+                )
+                # Uncomment the next line if you want to stop on first failure:
+                # break
 
-    session.close()
+        # Display results summary
+        total_duration = time.time() - start_time
+
+        logger.info("=" * 60)
+        logger.info("ETL Pipeline Summary")
+        logger.info("=" * 60)
+        logger.info(f"Total execution time: {total_duration:.2f} seconds")
+        logger.info(
+            f"Successful steps ({len(successful_steps)}): {', '.join(successful_steps)}"
+        )
+
+        if failed_steps:
+            logger.error(
+                f"Failed steps ({len(failed_steps)}): {', '.join(failed_steps)}"
+            )
+            logger.warning(
+                "Some ETL steps failed. Please check the logs above for details."
+            )
+        else:
+            logger.info("All ETL steps completed successfully!")
+
+        # Display sample data if all steps succeeded
+        if not failed_steps:
+            display_sample_data()
+
+        # Exit with appropriate code
+        if failed_steps:
+            logger.error("ETL pipeline completed with errors.")
+            sys.exit(1)
+        else:
+            logger.info("ETL pipeline completed successfully.")
+            
+        # Force garbage collection to free memory after ETL completion
+        gc.collect()
+            
+    except KeyboardInterrupt:
+        logger.warning("ETL pipeline interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error in ETL pipeline: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
