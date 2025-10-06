@@ -29,7 +29,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -123,9 +123,16 @@ def get_users(
                     "username": u.Username,
                     "first_name": u.First_Name,
                     "last_name": u.Last_Name,
-                    "city": u.City,
-                    "country": u.Country,
+                    "full_name": f"{u.First_Name} {u.Last_Name}",
+                    "address": {
+                        "address_1": u.Address_1,
+                        "address_2": u.Address_2,
+                        "city": u.City,
+                        "country": u.Country,
+                        "zipcode": u.Zipcode
+                    },
                     "phone_number": u.Phone_Number,
+                    "birth_date": u.Birth_Date.isoformat() if u.Birth_Date else None,
                     "gender": u.Gender
                 }
                 for u in users
@@ -136,212 +143,37 @@ def get_users(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/riders")
-def get_riders(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    courier_name: Optional[str] = None
-):
-    """Get riders with optional courier name filter"""
+@app.get("/api/users/{user_id}")
+def get_user_by_id(user_id: int):
+    """Get a specific user by ID"""
     try:
         db = next(get_db())
-        query = db.query(Dim_Rider)
+        user = db.query(Dim_Users).filter(Dim_Users.Users_ID == user_id).first()
         
-        if courier_name:
-            query = query.filter(Dim_Rider.Courier_Name == courier_name)
-        
-        riders = query.offset(skip).limit(limit).all()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         
         return {
-            "count": len(riders),
-            "data": [
-                {
-                    "rider_id": r.Rider_ID,
-                    "first_name": r.First_Name,
-                    "last_name": r.Last_Name,
-                    "vehicle_type": r.Vehicle_Type,
-                    "age": r.Age,
-                    "gender": r.Gender,
-                    "courier_name": r.Courier_Name
-                }
-                for r in riders
-            ]
+            "user_id": user.Users_ID,
+            "username": user.Username,
+            "first_name": user.First_Name,
+            "last_name": user.Last_Name,
+            "full_name": f"{user.First_Name} {user.Last_Name}",
+            "address": {
+                "address_1": user.Address_1,
+                "address_2": user.Address_2,
+                "city": user.City,
+                "country": user.Country,
+                "zipcode": user.Zipcode
+            },
+            "phone_number": user.Phone_Number,
+            "birth_date": user.Birth_Date.isoformat() if user.Birth_Date else None,
+            "gender": user.Gender
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching riders: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/orders")
-def get_orders(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    order_num: Optional[str] = None
-):
-    """Get order items with optional order number filter"""
-    try:
-        db = next(get_db())
-        query = db.query(
-            Fact_Order_Items,
-            Dim_Products.Name.label("product_name"),
-            Dim_Users.Username.label("username"),
-            Dim_Rider.First_Name.label("rider_first_name"),
-            Dim_Rider.Last_Name.label("rider_last_name")
-        ).join(
-            Dim_Products, Fact_Order_Items.Product_ID == Dim_Products.Product_ID
-        ).join(
-            Dim_Users, Fact_Order_Items.User_ID == Dim_Users.Users_ID
-        ).join(
-            Dim_Rider, Fact_Order_Items.Delivery_Rider_ID == Dim_Rider.Rider_ID
-        )
-        
-        if order_num:
-            query = query.filter(Fact_Order_Items.Order_Num == order_num)
-        
-        orders = query.offset(skip).limit(limit).all()
-        
-        return {
-            "count": len(orders),
-            "data": [
-                {
-                    "order_item_id": o.Fact_Order_Items.Order_Item_ID,
-                    "order_num": o.Fact_Order_Items.Order_Num,
-                    "product_name": o.product_name,
-                    "quantity": o.Fact_Order_Items.Quantity,
-                    "total_revenue": float(o.Fact_Order_Items.Total_Revenue),
-                    "username": o.username,
-                    "rider_name": f"{o.rider_first_name} {o.rider_last_name}",
-                    "notes": o.Fact_Order_Items.Notes
-                }
-                for o in orders
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error fetching orders: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/sales-summary")
-def get_sales_summary(
-    group_by: str = Query("category", regex="^(category|product|user|rider)$")
-):
-    """Get sales summary grouped by category, product, user, or rider"""
-    try:
-        db = next(get_db())
-        
-        if group_by == "category":
-            results = db.query(
-                Dim_Products.Category,
-                func.sum(Fact_Order_Items.Total_Revenue).label("total_revenue"),
-                func.sum(Fact_Order_Items.Quantity).label("total_quantity"),
-                func.count(Fact_Order_Items.Order_Item_ID).label("order_count")
-            ).join(
-                Dim_Products, Fact_Order_Items.Product_ID == Dim_Products.Product_ID
-            ).group_by(
-                Dim_Products.Category
-            ).all()
-            
-            return {
-                "group_by": "category",
-                "data": [
-                    {
-                        "category": r.Category,
-                        "total_revenue": float(r.total_revenue) if r.total_revenue else 0,
-                        "total_quantity": r.total_quantity,
-                        "order_count": r.order_count
-                    }
-                    for r in results
-                ]
-            }
-        
-        elif group_by == "product":
-            results = db.query(
-                Dim_Products.Name,
-                Dim_Products.Category,
-                func.sum(Fact_Order_Items.Total_Revenue).label("total_revenue"),
-                func.sum(Fact_Order_Items.Quantity).label("total_quantity"),
-                func.count(Fact_Order_Items.Order_Item_ID).label("order_count")
-            ).join(
-                Dim_Products, Fact_Order_Items.Product_ID == Dim_Products.Product_ID
-            ).group_by(
-                Dim_Products.Product_ID, Dim_Products.Name, Dim_Products.Category
-            ).order_by(
-                func.sum(Fact_Order_Items.Total_Revenue).desc()
-            ).limit(50).all()
-            
-            return {
-                "group_by": "product",
-                "data": [
-                    {
-                        "product_name": r.Name,
-                        "category": r.Category,
-                        "total_revenue": float(r.total_revenue) if r.total_revenue else 0,
-                        "total_quantity": r.total_quantity,
-                        "order_count": r.order_count
-                    }
-                    for r in results
-                ]
-            }
-        
-        elif group_by == "user":
-            results = db.query(
-                Dim_Users.Username,
-                Dim_Users.City,
-                Dim_Users.Country,
-                func.sum(Fact_Order_Items.Total_Revenue).label("total_revenue"),
-                func.count(Fact_Order_Items.Order_Item_ID).label("order_count")
-            ).join(
-                Dim_Users, Fact_Order_Items.User_ID == Dim_Users.Users_ID
-            ).group_by(
-                Dim_Users.Users_ID, Dim_Users.Username, Dim_Users.City, Dim_Users.Country
-            ).order_by(
-                func.sum(Fact_Order_Items.Total_Revenue).desc()
-            ).limit(50).all()
-            
-            return {
-                "group_by": "user",
-                "data": [
-                    {
-                        "username": r.Username,
-                        "city": r.City,
-                        "country": r.Country,
-                        "total_revenue": float(r.total_revenue) if r.total_revenue else 0,
-                        "order_count": r.order_count
-                    }
-                    for r in results
-                ]
-            }
-        
-        elif group_by == "rider":
-            results = db.query(
-                Dim_Rider.First_Name,
-                Dim_Rider.Last_Name,
-                Dim_Rider.Courier_Name,
-                func.count(Fact_Order_Items.Order_Item_ID).label("delivery_count"),
-                func.sum(Fact_Order_Items.Total_Revenue).label("total_revenue")
-            ).join(
-                Dim_Rider, Fact_Order_Items.Delivery_Rider_ID == Dim_Rider.Rider_ID
-            ).group_by(
-                Dim_Rider.Rider_ID, Dim_Rider.First_Name, Dim_Rider.Last_Name, Dim_Rider.Courier_Name
-            ).order_by(
-                func.count(Fact_Order_Items.Order_Item_ID).desc()
-            ).limit(50).all()
-            
-            return {
-                "group_by": "rider",
-                "data": [
-                    {
-                        "rider_name": f"{r.First_Name} {r.Last_Name}",
-                        "courier_name": r.Courier_Name,
-                        "delivery_count": r.delivery_count,
-                        "total_revenue": float(r.total_revenue) if r.total_revenue else 0
-                    }
-                    for r in results
-                ]
-            }
-        
-    except Exception as e:
-        logger.error(f"Error fetching sales summary: {e}")
+        logger.error(f"Error fetching user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -362,7 +194,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "api:app",
         host="0.0.0.0",
-        port=8000,
+        port=4000,
         reload=True,
         log_level="info"
     )
