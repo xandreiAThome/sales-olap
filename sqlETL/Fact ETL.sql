@@ -46,22 +46,17 @@ INSERT INTO warehouse_db.fact_orderItems (
 SELECT 
     dp.productID,                  
     s.quantity,
-    dd.date,                  
-    du.userID,              
-    dr.riderID,                 
-    s.quantity * dp.price AS revenue
-FROM warehouse_db.stg_orderItems s
-JOIN warehouse_db.dim_products dp 
-    ON dp.productID = s.productID
-JOIN warehouse_db.dim_date dd
-    ON dd.date = CASE
+    CASE
         WHEN s.deliveryDate LIKE '__/__/____' 
           THEN STR_TO_DATE(s.deliveryDate, '%m/%d/%Y')
         WHEN s.deliveryDate LIKE '____-__-__'
           THEN STR_TO_DATE(s.deliveryDate, '%Y-%m-%d')
         ELSE NULL
-    END
-JOIN warehouse_db.dim_users du 
-    ON du.userID = s.userID
-JOIN warehouse_db.dim_riders dr 
-    ON dr.riderID = s.riderID;
+	END,                  
+    s.userID,              
+    s.riderID,                 
+    s.quantity * dp.price AS revenue
+FROM warehouse_db.stg_orderItems s
+JOIN warehouse_db.dim_products dp ON dp.productID = s.productID
+
+
