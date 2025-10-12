@@ -14,7 +14,7 @@ sleep 5
 
 # Run Alembic migrations
 echo "Running database migrations..."
-if alembic upgrade head; then
+if alembic -c alembic.ini upgrade head; then
     echo "✅ Migrations completed successfully"
 else
     echo "❌ Migration failed!"
