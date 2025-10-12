@@ -14,7 +14,7 @@ class Dim_Date(Base):
 
     __table_args__ = (
         Index("idx_yqm", "Year", "Quarter", "Month"),
-        Index("idx_quareter", "Quarter"),
+        Index("idx_quarter", "Quarter"),
         Index("idx_yq", "Year", "Quarter"),
     )
 
