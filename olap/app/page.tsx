@@ -1,40 +1,35 @@
 'use client'
 
+import useSWR from 'swr';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
 
+// Fetcher function for SWR
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+};
+
 export default function Home() {
-  // --- Sample data ---
-  const barData = [
-    { month: 'Jan', sales: 4000 },
-    { month: 'Feb', sales: 3000 },
-    { month: 'Mar', sales: 5000 },
-    { month: 'Apr', sales: 7000 },
-    { month: 'May', sales: 6000 },
-  ];
-
-  const lineData = [
-    { month: 'Jan', revenue: 2400 },
-    { month: 'Feb', revenue: 3200 },
-    { month: 'Mar', revenue: 4100 },
-    { month: 'Apr', revenue: 5800 },
-    { month: 'May', revenue: 6900 },
-  ];
-
-  const pieData = [
-    { name: 'Electronics', value: 400 },
-    { name: 'Clothing', value: 300 },
-    { name: 'Groceries', value: 300 },
-    { name: 'Accessories', value: 200 },
-  ];
+  // SWR fetch hooks (with caching)
+  const { data: rollupData, error: rollupError } = useSWR('http://localhost:4000/api/rollup', fetcher);
+  const { data: drillDownData, error: drillDownError } = useSWR('http://localhost:4000/api/drillDown', fetcher);
+  const { data: sliceData, error: sliceError } = useSWR('http://localhost:4000/api/slice', fetcher);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
-  // --- JSX ---
+  // Combined loading & error handling
+  if (rollupError || drillDownError || sliceError)
+    return <p className="text-red-500 text-center mt-10">Error loading data.</p>;
+
+  if (!rollupData || !drillDownData || !sliceData)
+    return <p className="text-gray-500 text-center mt-10">Loading reports...</p>;
+
   return (
-    <div className="min-h-screen p-24">
+    <div className="min-h-screen p-24 bg-gray-100">
       <div className="flex flex-col items-center">
         <h1 className="text-4xl font-bold mb-8">Sales OLAP Dashboard</h1>
 
@@ -42,7 +37,7 @@ export default function Home() {
         <div className="bg-white p-6 rounded-2xl shadow w-full max-w-4xl mb-12">
           <h2 className="text-2xl font-bold mb-4">📊 Rollup Report - Monthly Sales</h2>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barData}>
+            <BarChart data={rollupData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -57,7 +52,7 @@ export default function Home() {
         <div className="bg-white p-6 rounded-2xl shadow w-full max-w-4xl mb-12">
           <h2 className="text-2xl font-bold mb-4">📈 Drill Down Report - Revenue Trend</h2>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={lineData}>
+            <LineChart data={drillDownData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -74,14 +69,14 @@ export default function Home() {
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={pieData}
+                data={sliceData}
                 dataKey="value"
                 nameKey="name"
                 outerRadius={100}
                 label
               >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                {sliceData.map((_: any, index: number) => (
+                  <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip />
