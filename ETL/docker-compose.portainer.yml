@@ -1,0 +1,100 @@
+version: '3.8'
+
+# Simplified Docker Compose for Portainer Deployment
+# This is the easiest way to deploy your ETL pipeline
+# Just copy-paste this into Portainer Stacks!
+
+services:
+  mysql_src_db:
+    image: mysql:8.1
+    container_name: mysql_src_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_SRC_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_SRC_DATABASE}
+      MYSQL_USER: ${MYSQL_SRC_USER}
+      MYSQL_PASSWORD: ${MYSQL_SRC_PASSWORD}
+    volumes:
+      - mysql_src_data:/var/lib/mysql
+    networks:
+      - etl_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_SRC_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Security: No ports exposed (only accessible within Docker network)
+
+  mysql_warehouse_db:
+    image: mysql:8.1
+    container_name: mysql_warehouse_db
+    restart: unless-stopped
+    command: >
+      --max-connections=200
+    ports:
+      # Exposed to localhost only - use SSH tunnel for remote access
+      - "127.0.0.1:3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_WH_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_WH_DATABASE}
+      MYSQL_USER: ${MYSQL_WH_USER}
+      MYSQL_PASSWORD: ${MYSQL_WH_PASSWORD}
+    volumes:
+      - mysql_warehouse_data:/var/lib/mysql
+    networks:
+      - etl_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_WH_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  etl:
+    # Option 1: Build from local files (if uploading via Portainer)
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Option 2: Use pre-built image (comment out 'build' above and uncomment below)
+    # image: ghcr.io/xandreiathome/sales-olap-etl:latest
+    
+    container_name: etl_pipeline
+    restart: "no"  # Run once and stop (not a background service)
+    depends_on:
+      mysql_src_db:
+        condition: service_healthy
+      mysql_warehouse_db:
+        condition: service_healthy
+    environment:
+      # Database connections use Docker service names
+      DATABASE_SOURCE_URL: mysql+pymysql://${MYSQL_SRC_USER}:${MYSQL_SRC_PASSWORD}@mysql_src_db:3306/${MYSQL_SRC_DATABASE}
+      DATABASE_WAREHOUSE_URL: mysql+pymysql://${MYSQL_WH_USER}:${MYSQL_WH_PASSWORD}@mysql_warehouse_db:3306/${MYSQL_WH_DATABASE}
+      BATCH_SIZE: ${BATCH_SIZE:-10000}
+    networks:
+      - etl_network
+
+networks:
+  etl_network:
+    driver: bridge
+
+volumes:
+  mysql_src_data:
+    driver: local
+  mysql_warehouse_data:
+    driver: local
+
+# ============================================
+# Environment Variables to Add in Portainer:
+# MYSQL_SRC_ROOT_PASSWORD=<your-strong-password>
+# MYSQL_SRC_USER=devuser1
+# MYSQL_SRC_PASSWORD=<your-strong-password>
+# MYSQL_SRC_DATABASE=db_src
+#
+# MYSQL_WH_ROOT_PASSWORD=<your-strong-password>
+# MYSQL_WH_USER=devuser2
+# MYSQL_WH_PASSWORD=<your-strong-password>
+# MYSQL_WH_DATABASE=db_warehouse
+#
+# BATCH_SIZE=10000
+

@@ -12,12 +12,17 @@ services:
       MYSQL_PASSWORD: devpass1
     volumes:
       - mysql_src_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mysql_warehouse_db:
     image: mysql:8.1
     container_name: mysql_warehouse_db
     restart: unless-stopped
-    command: --local-infile=1 --secure-file-priv=/var/lib/mysql-files
+    command: --local-infile=1 --secure-file-priv=/var/lib/mysql-files --innodb-buffer-pool-size=2G --innodb-log-file-size=512M --innodb-flush-log-at-trx-commit=2 --max-connections=200
     ports:
       - "3307:3306"       # Host port 3307 maps to container's 3306
     environment:
@@ -27,6 +32,34 @@ services:
       MYSQL_PASSWORD: devpass2
     volumes:
       - mysql_warehouse_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword2"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: etl_pipeline
+    depends_on:
+      mysql_src_db:
+        condition: service_healthy
+      mysql_warehouse_db:
+        condition: service_healthy
+    environment:
+      # Database connection strings for Docker network
+      DATABASE_SOURCE_URL: mysql+pymysql://devuser1:devpass1@mysql_src_db:3306/db_src
+      DATABASE_WAREHOUSE_URL: mysql+pymysql://devuser2:devpass2@mysql_warehouse_db:3306/db_warehouse
+      BATCH_SIZE: 10000
+    volumes:
+      # Mount the application code for development (optional - remove for production)
+      - ./:/app
+    networks:
+      - default
+    # Use restart: "no" so ETL runs once and stops
+    restart: "no"
 
 volumes:
   mysql_src_data:
