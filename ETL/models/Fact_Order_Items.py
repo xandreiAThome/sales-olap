@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Numeric, String, null
+from sqlalchemy import Column, ForeignKey, Integer, Numeric, String, Index
 from .base import Base
 
 
@@ -18,6 +18,15 @@ class Fact_Order_Items(Base):
     User_ID = Column(Integer, ForeignKey("dim_users.Users_ID"), nullable=False)
     Order_Num = Column(String(20), nullable=False)
     Total_Revenue = Column(Numeric(10, 2), nullable=False)
+
+    # Indexes for performance optimization
+    __table_args__ = (
+        # Existing composite index for general FK queries
+        Index("idx_fact_fk", "Product_ID", "User_ID", "Delivery_Date_ID", "Total_Revenue"),
+        # New index optimized for date-based aggregation queries
+        Index("idx_date_revenue", "Delivery_Date_ID", "Total_Revenue"),
+        Index("idx_rider_revenue", "Delivery_Rider_ID", "Total_Revenue")
+    )
 
 
 metadata_dim_riders = Fact_Order_Items.metadata

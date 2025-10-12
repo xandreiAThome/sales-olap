@@ -22,19 +22,24 @@ def extract_products_stream():
     result = None
     try:
         result = session.execute(
-            products.select().execution_options(stream_results=True)
+            products.select().execution_options(stream_results=True, yield_per=BATCH_SIZE)
         ).mappings()
         yield result
     except Exception as e:
         logger.error(f"Error streaming products: {e}")
-        return
+        raise
     finally:
-        try:
-            if result is not None:
+        # Ensure result is properly closed before session
+        if result is not None:
+            try:
                 result.close()
-        except Exception:
-            pass
-        session.close()
+            except Exception as e:
+                logger.warning(f"Error closing result: {e}")
+        # Close session after result
+        try:
+            session.close()
+        except Exception as e:
+            logger.warning(f"Error closing session: {e}")
 
 
 def clean_products_data(data):
