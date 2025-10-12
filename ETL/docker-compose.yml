@@ -17,6 +17,7 @@ services:
     image: mysql:8.1
     container_name: mysql_warehouse_db
     restart: unless-stopped
+    command: --local-infile=1 --secure-file-priv=/var/lib/mysql-files
     ports:
       - "3307:3306"       # Host port 3307 maps to container's 3306
     environment:

@@ -17,6 +17,13 @@ load_dotenv()
 database_warehouse_url = os.getenv("DATABASE_WAREHOUSE_URL")
 if not database_warehouse_url:
     raise ValueError("DATABASE_WAREHOUSE_URL environment variable not set")
+
+# Add local_infile=1 to connection string for LOAD DATA LOCAL INFILE support
+if "?" in database_warehouse_url:
+    database_warehouse_url += "&local_infile=1"
+else:
+    database_warehouse_url += "?local_infile=1"
+
 db_warehouse_engine = create_engine(
     database_warehouse_url, echo=False
 )  # set to false for production
