@@ -38,5 +38,5 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Alembic
-alembic.ini
+# Alembic is NEEDED - DO NOT ignore
+# alembic.ini and alembic/ folder must be included in the image
