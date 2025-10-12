@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date
+from sqlalchemy import Column, Integer, Date, Index
 from .base import Base
 
 
@@ -11,6 +11,12 @@ class Dim_Date(Base):
     Month = Column(Integer, nullable=False)
     Day = Column(Integer, nullable=False)
     Quarter = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_yqm", "Year", "Quarter", "Month"),
+        Index("idx_quareter", "Quarter"),
+        Index("idx_yq", "Year", "Quarter"),
+    )
 
 
 metadata_dim_date = Dim_Date.metadata

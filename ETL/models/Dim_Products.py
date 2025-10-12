@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric
+from sqlalchemy import Column, Integer, String, Numeric, Index
 from .base import Base
 
 
@@ -11,6 +11,11 @@ class Dim_Products(Base):
     Description = Column(String(255), nullable=False)
     Name = Column(String(100), nullable=False)
     Price = Column(Numeric(10, 2), nullable=False)
+
+    __table_args__ = (
+        Index("idx_product_name", "Name"),
+        Index("idx_category", "Category"),
+    )
 
 
 metadata_dim_products = Dim_Products.metadata

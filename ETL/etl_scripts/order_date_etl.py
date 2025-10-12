@@ -37,18 +37,23 @@ def extract_orders_with_items_stream():
             orderitems.c.notes,
         ).join(orderitems, orderitems.c.OrderId == orders.c.id)
 
-        result = session.execute(stmt.execution_options(stream_results=True)).mappings()
+        result = session.execute(stmt.execution_options(stream_results=True, yield_per=BATCH_SIZE)).mappings()
         yield result
     except Exception as e:
         logger.error(f"Error streaming joined orders+items: {e}", exc_info=True)
-        return
+        raise
     finally:
-        try:
-            if result is not None:
+        # Ensure result is properly closed before session
+        if result is not None:
+            try:
                 result.close()
-        except Exception:
-            pass
-        session.close()
+            except Exception as e:
+                logger.warning(f"Error closing result: {e}")
+        # Close session after result
+        try:
+            session.close()
+        except Exception as e:
+            logger.warning(f"Error closing session: {e}")
 
 
 def clean_orders_with_items(data):
