@@ -5,6 +5,4 @@ mysql-connector-python
 pymysql
 cryptography
 sympy
-fastapi
-uvicorn[standard]
-pydantic
+alembic
