@@ -88,19 +88,19 @@ def run_raw_query(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.get("/api/slice")
-def run_raw_query(db: Session = Depends(get_db)):
+@app.get("/api/slice/{city}")
+def run_raw_query(city: str, db: Session = Depends(get_db)):
     try:
         sql = text("""
             SELECT du.city, dp.Name ,SUM(foi.Total_Revenue ) as total_revenue
             FROM fact_order_items foi
             JOIN dim_users du  ON du.Users_ID = foi.User_ID
             JOIN dim_products dp ON foi.Product_ID = dp.Product_ID
-            WHERE du.City = 'East Kobe'
+            WHERE du.City = :city
             GROUP BY dp.Product_ID
             ORDER BY total_revenue DESC
         """)
-        result = db.execute(sql)
+        result = db.execute(sql, {"city": city})
         rows = result.fetchall()
 
         return [dict(row._mapping) for row in rows]
@@ -108,23 +108,24 @@ def run_raw_query(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
     
 
-@app.get("/api/dice")
-def run_raw_query(db: Session = Depends(get_db)):
+@app.get("/api/dice/{city1}/{city2}")
+def run_raw_query(city1: str, city2: str, db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT du.City, dp.Category, dd.`Year`, dd.Quarter, SUM(foi.Total_Revenue) as total_revenue
+            SELECT du.City, dp.Category, dd.`Year`, dd.Quarter, SUM(foi.Total_Revenue) AS total_revenue
             FROM fact_order_items foi
             JOIN dim_users du ON du.Users_ID = foi.User_ID
             JOIN dim_products dp ON dp.Product_ID = foi.Product_ID
-            JOIN dim_date dd  ON dd.Date_ID = foi.Delivery_Date_ID
-            WHERE du.City IN ("East Kobe", "Parkerside")
-                AND dp.Category IN ("electronics", "toys")
-                AND dd.`Year` = "2025"
-                AND dd.Quarter = 2
+            JOIN dim_date dd ON dd.Date_ID = foi.Delivery_Date_ID
+            WHERE du.City IN (:city1, :city2)
+              AND dp.Category IN ('electronics', 'toys')
+              AND dd.`Year` = '2025'
+              AND dd.Quarter = 2
             GROUP BY du.City, dp.Category, dd.`Year`, dd.Quarter
             ORDER BY total_revenue DESC;
         """)
-        result = db.execute(sql)
+        
+        result = db.execute(sql, {"city1": city1, "city2": city2})
         rows = result.fetchall()
 
         return [dict(row._mapping) for row in rows]

@@ -17,13 +17,9 @@ export default function Home() {
   // SWR fetch hooks (with caching)
   const { data: rollupData, error: rollupError } = useSWR('http://localhost:4000/api/rollup', fetcher);
   const { data: drillDownData, error: drillDownError } = useSWR('http://localhost:4000/api/drillDown', fetcher);
-  const { data: sliceData, error: sliceError } = useSWR('http://localhost:4000/api/slice', fetcher);
+  const { data: sliceData, error: sliceError } = useSWR('http://localhost:4000/api/slice/East Kobe', fetcher);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
-
-  // Combined loading & error handling
-  if (rollupError || drillDownError || sliceError)
-    return <p className="text-red-500 text-center mt-10">Error loading data.</p>;
 
   if (!rollupData || !drillDownData || !sliceData)
     return <p className="text-gray-500 text-center mt-10">Loading reports...</p>;
