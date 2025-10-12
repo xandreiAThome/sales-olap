@@ -25,64 +25,76 @@ def upgrade() -> None:
     op.create_table(
         'dim_riders',
         sa.Column('Rider_ID', sa.Integer(), nullable=False),
-        sa.Column('First_Name', sa.String(length=50), nullable=True),
-        sa.Column('Last_Name', sa.String(length=50), nullable=True),
-        sa.Column('Phone_Number', sa.String(length=20), nullable=True),
-        sa.Column('City', sa.String(length=50), nullable=True),
-        sa.Column('Country', sa.String(length=50), nullable=True),
-        sa.PrimaryKeyConstraint('Rider_ID')
+        sa.Column('First_Name', sa.String(length=40), nullable=False),
+        sa.Column('Last_Name', sa.String(length=40), nullable=False),
+        sa.Column('Vehicle_Type', sa.String(length=40), nullable=False),
+        sa.Column('Age', sa.Integer(), nullable=False),
+        sa.Column('Gender', sa.String(length=6), nullable=False),
+        sa.Column('Courier_Name', sa.String(length=20), nullable=False),
+        sa.PrimaryKeyConstraint('Rider_ID'),
+        sa.UniqueConstraint('Rider_ID')
     )
     
     # Create dim_products table
     op.create_table(
         'dim_products',
         sa.Column('Product_ID', sa.Integer(), nullable=False),
-        sa.Column('Name', sa.String(length=100), nullable=True),
-        sa.Column('Category', sa.String(length=50), nullable=True),
-        sa.Column('Price', sa.Numeric(precision=10, scale=2), nullable=True),
-        sa.PrimaryKeyConstraint('Product_ID')
+        sa.Column('Product_Code', sa.String(length=20), nullable=False),
+        sa.Column('Category', sa.String(length=50), nullable=False),
+        sa.Column('Description', sa.String(length=255), nullable=False),
+        sa.Column('Name', sa.String(length=100), nullable=False),
+        sa.Column('Price', sa.Numeric(precision=10, scale=2), nullable=False),
+        sa.PrimaryKeyConstraint('Product_ID'),
+        sa.UniqueConstraint('Product_ID')
     )
     
     # Create dim_users table
     op.create_table(
         'dim_users',
-        sa.Column('User_ID', sa.Integer(), nullable=False),
-        sa.Column('First_Name', sa.String(length=50), nullable=True),
-        sa.Column('Last_Name', sa.String(length=50), nullable=True),
-        sa.Column('Email', sa.String(length=100), nullable=True),
-        sa.Column('Phone_Number', sa.String(length=20), nullable=True),
-        sa.Column('Date_of_Birth', sa.Date(), nullable=True),
-        sa.Column('City', sa.String(length=50), nullable=True),
-        sa.Column('Country', sa.String(length=50), nullable=True),
-        sa.PrimaryKeyConstraint('User_ID')
+        sa.Column('Users_ID', sa.Integer(), nullable=False),
+        sa.Column('Username', sa.String(length=50), nullable=False),
+        sa.Column('First_Name', sa.String(length=40), nullable=False),
+        sa.Column('Last_Name', sa.String(length=40), nullable=False),
+        sa.Column('City', sa.String(length=50), nullable=False),
+        sa.Column('Country', sa.String(length=100), nullable=False),
+        sa.Column('Zipcode', sa.String(length=20), nullable=False),
+        sa.Column('Gender', sa.String(length=6), nullable=False),
+        sa.PrimaryKeyConstraint('Users_ID'),
+        sa.UniqueConstraint('Users_ID')
     )
     
     # Create dim_date table
     op.create_table(
         'dim_date',
-        sa.Column('Delivery_Date_ID', sa.Integer(), nullable=False),
+        sa.Column('Date_ID', sa.Integer(), nullable=False),
         sa.Column('Date', sa.Date(), nullable=False),
-        sa.Column('Year', sa.Integer(), nullable=True),
-        sa.Column('Quarter', sa.Integer(), nullable=True),
-        sa.Column('Month', sa.Integer(), nullable=True),
-        sa.Column('Day', sa.Integer(), nullable=True),
-        sa.Column('DayOfWeek', sa.Integer(), nullable=True),
-        sa.Column('WeekOfYear', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('Delivery_Date_ID')
+        sa.Column('Year', sa.Integer(), nullable=False),
+        sa.Column('Month', sa.Integer(), nullable=False),
+        sa.Column('Day', sa.Integer(), nullable=False),
+        sa.Column('Quarter', sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint('Date_ID'),
+        sa.UniqueConstraint('Date_ID'),
+        sa.UniqueConstraint('Date')
     )
     
     # Create fact_order_items table
     op.create_table(
         'fact_order_items',
-        sa.Column('Order_Item_ID', sa.Integer(), nullable=False),
-        sa.Column('Order_ID', sa.Integer(), nullable=True),
+        sa.Column('Order_Item_ID', sa.Integer(), nullable=False, autoincrement=True),
         sa.Column('Product_ID', sa.Integer(), nullable=False),
+        sa.Column('Quantity', sa.Integer(), nullable=False),
+        sa.Column('Notes', sa.String(length=100), nullable=True),
         sa.Column('Delivery_Date_ID', sa.Integer(), nullable=False),
-        sa.Column('Delivery_Rider_ID', sa.Integer(), nullable=True),
+        sa.Column('Delivery_Rider_ID', sa.Integer(), nullable=False),
         sa.Column('User_ID', sa.Integer(), nullable=False),
-        sa.Column('Quantity', sa.Integer(), nullable=True),
-        sa.Column('Total_Revenue', sa.Numeric(precision=10, scale=2), nullable=True),
-        sa.PrimaryKeyConstraint('Order_Item_ID')
+        sa.Column('Order_Num', sa.String(length=20), nullable=False),
+        sa.Column('Total_Revenue', sa.Numeric(precision=10, scale=2), nullable=False),
+        sa.PrimaryKeyConstraint('Order_Item_ID'),
+        sa.UniqueConstraint('Order_Item_ID'),
+        sa.ForeignKeyConstraint(['Product_ID'], ['dim_products.Product_ID']),
+        sa.ForeignKeyConstraint(['Delivery_Date_ID'], ['dim_date.Date_ID']),
+        sa.ForeignKeyConstraint(['Delivery_Rider_ID'], ['dim_riders.Rider_ID']),
+        sa.ForeignKeyConstraint(['User_ID'], ['dim_users.Users_ID'])
     )
 
 
