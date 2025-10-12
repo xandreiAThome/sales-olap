@@ -131,6 +131,18 @@ def run_raw_query(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@app.get("/api/cities")
+def run_raw_query(db: Session = Depends(get_db)):
+    try:
+        sql = text("""
+            SELECT DISTINCT City FROM dim_users
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
+
+        return [row._mapping["City"] for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     logger.info("Starting FastAPI server...")
