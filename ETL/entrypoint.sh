@@ -24,28 +24,16 @@ fi
 
 # Run Alembic migrations
 echo "Running database migrations..."
+echo "Current migration status:"
+alembic -c alembic.ini current
 
-# First, check current migration status
-echo "Checking current migration status..."
-alembic -c alembic.ini current || true
-
-# Try to upgrade
-if alembic -c alembic.ini upgrade head 2>&1 | tee /tmp/migration.log; then
+echo ""
+echo "Applying migrations..."
+if alembic -c alembic.ini upgrade head; then
     echo "✅ Migrations completed successfully"
 else
-    exit_code=$?
-    echo ""
-    echo "⚠️  Migration command failed (exit code: $exit_code)"
-    
-    # Check if it's a duplicate key/index error (safe to ignore)
-    if grep -qi "duplicate\|already exists" /tmp/migration.log; then
-        echo "✅ This is a 'duplicate key/index' error - database is already up-to-date"
-        echo "   Continuing with ETL pipeline..."
-    else
-        echo "❌ Migration failed with a different error"
-        echo "   Check the error above for details"
-        exit 1
-    fi
+    echo "❌ Migration failed!"
+    exit 1
 fi
 
 echo ""
