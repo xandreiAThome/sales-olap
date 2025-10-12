@@ -105,6 +105,7 @@ def transform_and_load_order_items():
     wh_session = Session_db_warehouse()
     total_upserted = 0
     fk_checks_disabled = False
+    commit_successful = False  # Track if commit succeeded
 
     try:
         # Disable checks and optimize MySQL settings for bulk insert
@@ -142,6 +143,7 @@ def transform_and_load_order_items():
 
                 # Build fact records for this chunk
                 fact_records = []
+                skipped_null_dates = 0
                 for row in chunk_rows:
                     row_dict = dict(row)
                     
@@ -153,6 +155,11 @@ def transform_and_load_order_items():
                         if pd.notna(parsed_date):
                             date_key = parsed_date.date()
                             delivery_date_id = date_lookup.get(date_key)
+                    
+                    # Skip rows with NULL Delivery_Date_ID (required for partitioning)
+                    if delivery_date_id is None:
+                        skipped_null_dates += 1
+                        continue
 
                     fact_records.append({
                         "Product_ID": row_dict.get("Product_ID"),
@@ -170,7 +177,13 @@ def transform_and_load_order_items():
                     stmt = insert(Fact_Order_Items).prefix_with("IGNORE").values(fact_records)
                     wh_session.execute(stmt)
                     total_upserted += len(fact_records)
+                    
+                    if skipped_null_dates > 0:
+                        logger.warning(f"Batch {batch_num}: Skipped {skipped_null_dates} rows with NULL Delivery_Date_ID")
+                    
                     logger.info(f"Batch {batch_num}: Insert completed (total: {total_upserted})")
+                elif skipped_null_dates > 0:
+                    logger.warning(f"Batch {batch_num}: All {skipped_null_dates} rows had NULL dates, nothing inserted")
 
                 # Cleanup
                 del chunk_rows, fact_records
@@ -179,63 +192,75 @@ def transform_and_load_order_items():
         # Commit once at the end for maximum performance
         logger.info(f"All batches processed. Committing {total_upserted} total rows...")
         wh_session.commit()
+        commit_successful = True  # Mark commit as successful
         logger.info(f"Commit completed! Inserted {total_upserted} fact rows total")
 
     except Exception as e:
-        wh_session.rollback()
         logger.error(f"Error loading order items: {e}", exc_info=True)
+        # Rollback any uncommitted changes
+        try:
+            wh_session.rollback()
+            logger.info("Transaction rolled back successfully")
+        except Exception as rb_error:
+            logger.error(f"Error during rollback: {rb_error}", exc_info=True)
         raise
     finally:
-        # Ensure all 3 custom indexes exist (create if missing)
-        try:
-            logger.info("Ensuring custom indexes exist (this may take a few minutes)...")
-            
-            # idx_fact_fk
+        # Only ensure indexes if commit was successful
+        if commit_successful:
             try:
-                wh_session.execute(text("""
-                    CREATE INDEX idx_fact_fk 
-                    ON fact_order_items (Product_ID, User_ID, Delivery_Date_ID, Total_Revenue)
-                """))
-                logger.info("idx_fact_fk created")
+                logger.info("Ensuring custom indexes exist (this may take a few minutes)...")
+                
+                # idx_fact_fk
+                try:
+                    wh_session.execute(text("""
+                        CREATE INDEX idx_fact_fk 
+                        ON fact_order_items (Product_ID, User_ID, Delivery_Date_ID, Total_Revenue)
+                    """))
+                    logger.info("idx_fact_fk created")
+                except Exception as e:
+                    if "Duplicate key name" in str(e) or "already exists" in str(e):
+                        logger.info("idx_fact_fk already exists")
+                    else:
+                        raise
+                
+                # idx_date_revenue
+                try:
+                    wh_session.execute(text("""
+                        CREATE INDEX idx_date_revenue 
+                        ON fact_order_items (Delivery_Date_ID, Total_Revenue)
+                    """))
+                    logger.info("idx_date_revenue created")
+                except Exception as e:
+                    if "Duplicate key name" in str(e) or "already exists" in str(e):
+                        logger.info("idx_date_revenue already exists")
+                    else:
+                        raise
+                
+                # idx_rider_revenue
+                try:
+                    wh_session.execute(text("""
+                        CREATE INDEX idx_rider_revenue 
+                        ON fact_order_items (Delivery_Rider_ID, Total_Revenue)
+                    """))
+                    logger.info("idx_rider_revenue created")
+                except Exception as e:
+                    if "Duplicate key name" in str(e) or "already exists" in str(e):
+                        logger.info("idx_rider_revenue already exists")
+                    else:
+                        raise
+                
+                wh_session.commit()
+                logger.info("Custom indexes ensured successfully")
             except Exception as e:
-                if "Duplicate key name" in str(e) or "already exists" in str(e):
-                    logger.info("idx_fact_fk already exists")
-                else:
-                    raise
-            
-            # idx_date_revenue
-            try:
-                wh_session.execute(text("""
-                    CREATE INDEX idx_date_revenue 
-                    ON fact_order_items (Delivery_Date_ID, Total_Revenue)
-                """))
-                logger.info("idx_date_revenue created")
-            except Exception as e:
-                if "Duplicate key name" in str(e) or "already exists" in str(e):
-                    logger.info("idx_date_revenue already exists")
-                else:
-                    raise
-            
-            # idx_rider_revenue
-            try:
-                wh_session.execute(text("""
-                    CREATE INDEX idx_rider_revenue 
-                    ON fact_order_items (Delivery_Rider_ID, Total_Revenue)
-                """))
-                logger.info("idx_rider_revenue created")
-            except Exception as e:
-                if "Duplicate key name" in str(e) or "already exists" in str(e):
-                    logger.info("idx_rider_revenue already exists")
-                else:
-                    raise
-            
-            wh_session.commit()
-            logger.info("Custom indexes ensured successfully")
-        except Exception as e:
-            logger.error(f"Error ensuring indexes exist: {e}", exc_info=True)
-            wh_session.rollback()
+                logger.error(f"Error ensuring indexes exist: {e}", exc_info=True)
+                try:
+                    wh_session.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors in cleanup
+        else:
+            logger.warning("Commit was not successful, skipping index creation")
         
-        # Re-enable checks and restore MySQL settings
+        # Always re-enable checks and restore MySQL settings
         if fk_checks_disabled:
             try:
                 logger.info("Restoring MySQL settings...")
@@ -248,7 +273,11 @@ def transform_and_load_order_items():
             except Exception as e:
                 logger.error(f"Error restoring MySQL settings: {e}", exc_info=True)
         
-        wh_session.close()
+        # Always close the session
+        try:
+            wh_session.close()
+        except Exception as e:
+            logger.error(f"Error closing session: {e}", exc_info=True)
 
 
 def load_transform_date_and_order_items():
