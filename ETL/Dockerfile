@@ -20,8 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire ETL application
 COPY . .
 
+# Make entrypoint script executable
+RUN chmod +x entrypoint.sh
+
 # Set Python to run in unbuffered mode for better logging
 ENV PYTHONUNBUFFERED=1
 
-# Default command to run the ETL pipeline
-CMD ["python", "app.py"]
+# Use entrypoint script to run migrations first, then ETL
+ENTRYPOINT ["./entrypoint.sh"]
