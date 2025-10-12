@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text, func
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from models.Dim_Date import Dim_Date
 from models.Fact_Order_Items import Fact_Order_Items
 from util.logging_config import setup_logging, get_logger
 import uvicorn
+
 
 load_dotenv()
 
@@ -44,150 +45,82 @@ def get_db():
     finally:
         db.close()
 
-
-@app.get("/")
-def read_root():
-    """Root endpoint with API information"""
-    return {
-        "message": "Sales OLAP API",
-        "version": "1.0.0",
-        "endpoints": {
-            "products": "/api/products",
-            "users": "/api/users",
-            "riders": "/api/riders",
-            "orders": "/api/orders",
-            "sales-summary": "/api/sales-summary"
-        }
-    }
-
-
-@app.get("/api/products")
-def get_products(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    category: Optional[str] = None
-):
-    """Get products with optional category filter"""
+@app.get("/api/rollup")
+def run_raw_query(db: Session = Depends(get_db)):
     try:
-        db = next(get_db())
-        query = db.query(Dim_Products)
-        
-        if category:
-            query = query.filter(Dim_Products.Category == category)
-        
-        products = query.offset(skip).limit(limit).all()
-        
-        return {
-            "count": len(products),
-            "data": [
-                {
-                    "product_id": p.Product_ID,
-                    "product_code": p.Product_Code,
-                    "name": p.Name,
-                    "category": p.Category,
-                    "description": p.Description,
-                    "price": float(p.Price)
-                }
-                for p in products
-            ]
-        }
+        sql = text("""
+            SELECT dd.`Year`, dd.Quarter , dd.`Month`,  SUM(foi.Total_Revenue) as revenue
+            FROM fact_order_items foi
+            JOIN dim_date dd on dd.Date_ID  = foi.Delivery_Date_ID
+            GROUP BY dd.`Year` , dd.Quarter , dd.`Month` WITH ROLLUP
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
+
+        return [dict(row._mapping) for row in rows]
     except Exception as e:
-        logger.error(f"Error fetching products: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/users")
-def get_users(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    city: Optional[str] = None,
-    country: Optional[str] = None
-):
-    """Get users with optional city and country filters"""
+    
+@app.get("/api/drillDown")
+def run_raw_query(db: Session = Depends(get_db)):
     try:
-        db = next(get_db())
-        query = db.query(Dim_Users)
-        
-        if city:
-            query = query.filter(Dim_Users.City == city)
-        if country:
-            query = query.filter(Dim_Users.Country == country)
-        
-        users = query.offset(skip).limit(limit).all()
-        
-        return {
-            "count": len(users),
-            "data": [
-                {
-                    "user_id": u.Users_ID,
-                    "username": u.Username,
-                    "first_name": u.First_Name,
-                    "last_name": u.Last_Name,
-                    "full_name": f"{u.First_Name} {u.Last_Name}",
-                    "address": {
-                        "address_1": u.Address_1,
-                        "address_2": u.Address_2,
-                        "city": u.City,
-                        "country": u.Country,
-                        "zipcode": u.Zipcode
-                    },
-                    "phone_number": u.Phone_Number,
-                    "birth_date": u.Birth_Date.isoformat() if u.Birth_Date else None,
-                    "gender": u.Gender
-                }
-                for u in users
-            ]
-        }
+        sql = text("""
+            SELECT dr.Courier_Name, dr.Vehicle_Type, dr.First_Name, dr.Last_Name ,SUM(foi.Total_Revenue) as total_revenue
+            FROM fact_order_items foi
+            JOIN dim_riders dr ON dr.Rider_ID  = foi.Delivery_Rider_ID
+            GROUP BY dr.Courier_Name, dr.Vehicle_Type, dr.First_Name, dr.Last_Name 
+            ORDER BY total_revenue DESC
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
+
+        return [dict(row._mapping) for row in rows]
     except Exception as e:
-        logger.error(f"Error fetching users: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/users/{user_id}")
-def get_user_by_id(user_id: int):
-    """Get a specific user by ID"""
+    
+@app.get("/api/slice")
+def run_raw_query(db: Session = Depends(get_db)):
     try:
-        db = next(get_db())
-        user = db.query(Dim_Users).filter(Dim_Users.Users_ID == user_id).first()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        return {
-            "user_id": user.Users_ID,
-            "username": user.Username,
-            "first_name": user.First_Name,
-            "last_name": user.Last_Name,
-            "full_name": f"{user.First_Name} {user.Last_Name}",
-            "address": {
-                "address_1": user.Address_1,
-                "address_2": user.Address_2,
-                "city": user.City,
-                "country": user.Country,
-                "zipcode": user.Zipcode
-            },
-            "phone_number": user.Phone_Number,
-            "birth_date": user.Birth_Date.isoformat() if user.Birth_Date else None,
-            "gender": user.Gender
-        }
-    except HTTPException:
-        raise
+        sql = text("""
+            SELECT du.city, dp.Name ,SUM(foi.Total_Revenue ) as total_revenue
+            FROM fact_order_items foi
+            JOIN dim_users du  ON du.Users_ID = foi.User_ID
+            JOIN dim_products dp ON foi.Product_ID = dp.Product_ID
+            WHERE du.City = 'East Kobe'
+            GROUP BY dp.Product_ID
+            ORDER BY total_revenue DESC
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
+
+        return [dict(row._mapping) for row in rows]
     except Exception as e:
-        logger.error(f"Error fetching user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
 
-
-@app.get("/api/health")
-def health_check():
-    """Health check endpoint"""
+@app.get("/api/dice")
+def run_raw_query(db: Session = Depends(get_db)):
     try:
-        db = next(get_db())
-        db.execute(text("SELECT 1"))
-        return {"status": "healthy", "database": "connected"}
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail="Database connection failed")
+        sql = text("""
+            SELECT du.City, dp.Category, dd.`Year`, dd.Quarter, SUM(foi.Total_Revenue) as total_revenue
+            FROM fact_order_items foi
+            JOIN dim_users du ON du.Users_ID = foi.User_ID
+            JOIN dim_products dp ON dp.Product_ID = foi.Product_ID
+            JOIN dim_date dd  ON dd.Date_ID = foi.Delivery_Date_ID
+            WHERE du.City IN ("East Kobe", "Parkerside")
+                AND dp.Category IN ("electronics", "toys")
+                AND dd.`Year` = "2025"
+                AND dd.Quarter = 2
+            GROUP BY du.City, dp.Category, dd.`Year`, dd.Quarter
+            ORDER BY total_revenue DESC;
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
 
+        return [dict(row._mapping) for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 if __name__ == "__main__":
     logger.info("Starting FastAPI server...")
