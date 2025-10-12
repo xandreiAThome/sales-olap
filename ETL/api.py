@@ -65,11 +65,21 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT dr.Courier_Name, dr.Vehicle_Type, dr.First_Name, dr.Last_Name ,SUM(foi.Total_Revenue) as total_revenue
-            FROM fact_order_items foi
-            JOIN dim_riders dr ON dr.Rider_ID  = foi.Delivery_Rider_ID
-            GROUP BY dr.Courier_Name, dr.Vehicle_Type, dr.First_Name, dr.Last_Name 
-            ORDER BY total_revenue DESC
+            SELECT 
+                dr.Courier_Name, 
+                dr.Vehicle_Type, 
+                dr.First_Name, 
+                dr.Last_Name,
+                agg.total_revenue
+            FROM (
+                SELECT 
+                    Delivery_Rider_ID,
+                    SUM(Total_Revenue) as total_revenue
+                FROM fact_order_items
+                GROUP BY Delivery_Rider_ID
+            ) agg
+            JOIN dim_riders dr ON dr.Rider_ID = agg.Delivery_Rider_ID
+            ORDER BY agg.total_revenue DESC
         """)
         result = db.execute(sql)
         rows = result.fetchall()
