@@ -97,4 +97,10 @@ volumes:
 # MYSQL_WH_DATABASE=db_warehouse
 #
 # BATCH_SIZE=10000
-
+# ssh -N -L 3307:127.0.0.1:3307 root@
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_Users.sql
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_Products.sql
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_Riders.sql
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_Couriers.sql
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_Orders.sql
+# root@ubuntu-s-1vcpu-2gb-amd-sgp1-01:~/Dump20250923# docker exec -i mysql_src_db mysql -uroot -p db_src < faker_OrderItems.sq

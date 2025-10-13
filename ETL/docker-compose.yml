@@ -38,29 +38,6 @@ services:
       timeout: 5s
       retries: 5
 
-  etl:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: etl_pipeline
-    depends_on:
-      mysql_src_db:
-        condition: service_healthy
-      mysql_warehouse_db:
-        condition: service_healthy
-    environment:
-      # Database connection strings for Docker network
-      DATABASE_SOURCE_URL: mysql+pymysql://devuser1:devpass1@mysql_src_db:3306/db_src
-      DATABASE_WAREHOUSE_URL: mysql+pymysql://devuser2:devpass2@mysql_warehouse_db:3306/db_warehouse
-      BATCH_SIZE: 10000
-    volumes:
-      # Mount the application code for development (optional - remove for production)
-      - ./:/app
-    networks:
-      - default
-    # Use restart: "no" so ETL runs once and stops
-    restart: "no"
-
 volumes:
   mysql_src_data:
   mysql_warehouse_data:

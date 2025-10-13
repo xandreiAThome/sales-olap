@@ -70,6 +70,7 @@ def extract_orders_with_items_stream():
     try:
         # Extract with SQL processing including revenue calculation
         stmt = select(
+            orders.c.id.label("Order_ID"),  # Add Order_ID for composite key
             orders.c.orderNumber.label("Order_Num"),
             orders.c.userId.label("User_ID"),
             orders.c.deliveryRiderId.label("Delivery_Rider_ID"),
@@ -161,8 +162,17 @@ def transform_and_load_order_items():
                         skipped_null_dates += 1
                         continue
 
+                    # Create composite Order_Item_ID from Order_ID and Product_ID
+                    order_id = row_dict.get("Order_ID")
+                    product_id = row_dict.get("Product_ID")
+                    
+                    # Generate unique Order_Item_ID using a large multiplier to avoid collisions
+                    # Assumes Order_ID and Product_ID are reasonably sized integers
+                    order_item_id = order_id * 1000000 + product_id
+
                     fact_records.append({
-                        "Product_ID": row_dict.get("Product_ID"),
+                        "Order_Item_ID": order_item_id,  # Composite unique identifier
+                        "Product_ID": product_id,
                         "Quantity": row_dict.get("Quantity"),
                         "Notes": row_dict.get("Notes"),
                         "Delivery_Date_ID": delivery_date_id,

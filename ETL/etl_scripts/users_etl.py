@@ -38,9 +38,9 @@ def extract_users_stream():
             func.trim(title_case(users.c.country)).label("Country"),
             func.regexp_replace(func.trim(users.c.zipCode), r'[^0-9]', '').label("Zipcode"),
             case(
-                (func.lower(func.trim(users.c.gender)) == "m", "male"),
-                (func.lower(func.trim(users.c.gender)) == "f", "female"),
-                else_="other"
+                (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "m", "male"),
+                (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "f", "female"),
+                else_=None
             ).label("Gender"),
         )
         result = session.execute(
