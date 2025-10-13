@@ -20,16 +20,31 @@ def extract_riders_with_couriers():
                 func.lower(func.substring(column, 2))
             )
         
+        # Normalize vehicle types to standard categories
+        vehicle_type_normalized = case(
+            (func.lower(func.trim(riders.c.vehicleType)).in_(["bicycle", "bike"]), "bicycle"),
+            (func.lower(func.trim(riders.c.vehicleType)).in_(["motorbike", "motorcycle"]), "motorcycle"),
+            (func.lower(func.trim(riders.c.vehicleType)) == "trike", "trike"),
+            (func.lower(func.trim(riders.c.vehicleType)) == "car", "car"),
+            else_=func.lower(func.trim(riders.c.vehicleType))  # Keep original if not matched
+        )
+        
         stmt = select(
             riders.c.id.label("Rider_ID"),
             func.trim(title_case(riders.c.firstName)).label("First_Name"),
             func.trim(title_case(riders.c.lastName)).label("Last_Name"),
-            func.lower(func.trim(riders.c.vehicleType)).label("Vehicle_Type"),
+            case(
+                (func.lower(func.trim(riders.c.vehicleType)).in_(["bicycle", "bike"]), "bicycle"),
+                (func.lower(func.trim(riders.c.vehicleType)).in_(["motorbike", "motorcycle"]), "motorcycle"),
+                (func.lower(func.trim(riders.c.vehicleType)) == "trike", "trike"),
+                (func.lower(func.trim(riders.c.vehicleType)) == "car", "car"),
+                else_=func.lower(func.trim(riders.c.vehicleType))
+            ).label("Vehicle_Type"),
             riders.c.age.label("Age"),
             case(
-                (func.lower(func.trim(riders.c.gender)) == "m", "male"),
-                (func.lower(func.trim(riders.c.gender)) == "f", "female"),
-                else_="other"
+                (func.lower(func.substring(func.trim(riders.c.gender), 1, 1)) == "m", "male"),
+                (func.lower(func.substring(func.trim(riders.c.gender), 1, 1)) == "f", "female"),
+                else_=None
             ).label("Gender"),
             couriers.c.name.label("Courier_Name")
         ).select_from(riders.outerjoin(couriers, riders.c.courierId == couriers.c.id))
