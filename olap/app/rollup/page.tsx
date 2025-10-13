@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
   Select,
@@ -12,40 +12,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import useSWR from 'swr';
 
-// Example data
-const rollupData = [
-  { year: 2023, quarter: 'Q1', month: 'January', total_revenue: 12000 },
-  { year: 2023, quarter: 'Q1', month: 'February', total_revenue: 18000 },
-  { year: 2023, quarter: 'Q2', month: 'April', total_revenue: 25000 },
-  { year: 2024, quarter: 'Q1', month: 'January', total_revenue: 19000 },
-  { year: 2024, quarter: 'Q2', month: 'April', total_revenue: 30000 },
-];
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+};
 
 export default function RollupReport() {
-  type FilterKey = 'year' | 'quarter' | 'month';
-  const [filterKey, setFilterKey] = useState<FilterKey>('year');
+  const { data: rollupData, error: rollupError } = useSWR(
+    'http://localhost:4000/api/rollup',
+    fetcher
+  );
 
-  // --- Aggregate data dynamically ---
-  const aggregatedData = useMemo(() => {
-    const grouped = rollupData.reduce((acc: Record<string, number>, item) => {
-      const key = item[filterKey];
-      acc[key] = (acc[key] || 0) + item.total_revenue;
-      return acc;
-    }, {});
+  type FilterKey = 'Year' | 'Quarter' | 'Month'; // 👈 match your API keys (case-sensitive)
+  const [filterKey, setFilterKey] = useState<FilterKey>('Year');
 
-    // Convert to array for Recharts
-    return Object.entries(grouped).map(([key, total]) => ({
-      [filterKey]: key,
-      total_revenue: total,
-    }));
-  }, [filterKey]);
+  // --- Handle loading/error states ---
+  if (rollupError) {
+    return <div className="p-6 text-red-500 font-semibold">Failed to load data 😢</div>;
+  }
 
-  // --- Chart axis key (x-axis depends on filterKey) ---
+  if (!rollupData) {
+    return <div className="p-6 text-gray-500 italic">Loading rollup data...</div>;
+  }
+
+  // --- Aggregate data ---
+  const grouped: Record<string, number> = {};
+
+  rollupData.forEach((item: any) => {
+    const key = item[filterKey];
+    grouped[key] = (grouped[key] || 0) + item.revenue; // 👈 use correct property
+  });
+
+  const aggregatedData = Object.entries(grouped).map(([key, total]) => ({
+    [filterKey]: key,
+    revenue: total,
+  }));
+
   const xKey = filterKey;
 
+  if (aggregatedData.length === 0) {
+    return <div className="p-6 text-gray-500 italic">No data available.</div>;
+  }
+
   return (
-    <div className="bg-white p-6 rounded-2xl shadow w-full max-w-4xl mb-12">
+    <div className="bg-white p-6 rounded-2xl shadow w-full max-w-auto mb-12">
       <h2 className="text-2xl font-bold mb-6">📊 Rollup Report - Sales Overview</h2>
 
       {/* --- Filter Selector --- */}
@@ -56,26 +69,39 @@ export default function RollupReport() {
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="year">Year</SelectItem>
-              <SelectItem value="quarter">Quarter</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
+              <SelectItem value="Year">Year</SelectItem>
+              <SelectItem value="Quarter">Quarter</SelectItem>
+              <SelectItem value="Month">Month</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
       {/* --- Bar Chart --- */}
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={aggregatedData}>
+      <ResponsiveContainer width="70%" height={600}>
+        <BarChart
+          data={aggregatedData}
+          margin={{ top: 20, right: 40, left: 80, bottom: 20 }}
+        >
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey={xKey} />
-          <YAxis />
+          <YAxis
+            tickFormatter={(v) => `${(v / 1e9).toFixed(2)}B`} // ✅ display billions
+            label={{
+              value: 'Revenue (Billion ₱)',
+              angle: -90,
+              position: 'insideLeft',
+              offset: 10,
+            }}
+          />
           <Tooltip
-            formatter={(value: number) => [`₱${value.toLocaleString()}`, 'Total Revenue']}
-            labelFormatter={(label) => `${filterKey.toUpperCase()}: ${label}`}
+            formatter={(value: number) =>
+              `₱${(value / 1e9).toFixed(2)}B`
+            } // ✅ tooltip shows billions
+            labelFormatter={(label) => `${filterKey}: ${label}`}
           />
           <Legend />
-          <Bar dataKey="total_revenue" fill="#3b82f6" />
+          <Bar dataKey="revenue" fill="#3b82f6" name="Total Revenue" />
         </BarChart>
       </ResponsiveContainer>
     </div>

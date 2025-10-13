@@ -4,33 +4,45 @@ import { useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import useSWR from 'swr';
 
-// Example data
-const rawData = [
-  { City: "East Kobe", Category: "electronics", Year: 2025, Quarter: 2, total_revenue: 385477.2 },
-  { City: "Parkerside", Category: "toys", Year: 2025, Quarter: 2, total_revenue: 213244.35 },
-  { City: "East Kobe", Category: "toys", Year: 2025, Quarter: 2, total_revenue: 39411.55 },
-];
-
-// ✅ Filter only the selected quarter and year
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
 
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+};
+
 export default function DiceReport() {
-  // Group by City → each Category as its own bar
+  const { data: rollupData, error: rollupError } = useSWR(
+    'http://localhost:4000/api/dice/East Kobe/Parkerside',
+    fetcher
+  );
+
   const data = useMemo(() => {
+    if (!rollupData) return [];
+
     const map: Record<string, any> = {};
-    rawData
-      .filter(d => d.Year === DICE_YEAR && d.Quarter === DICE_QUARTER)
-      .forEach(({ City, Category, total_revenue }) => {
+
+    rollupData
+      .filter((d: any) => d.Year === DICE_YEAR && d.Quarter === DICE_QUARTER)
+      .forEach(({ City, Category, total_revenue }: any) => {
         if (!map[City]) map[City] = { City };
         map[City][Category] = (map[City][Category] || 0) + total_revenue;
       });
-    return Object.values(map);
-  }, []);
 
-  // Extract all unique categories
-  const categories = Array.from(new Set(rawData.map(d => d.Category)));
+    return Object.values(map);
+  }, [rollupData]);
+
+  const categories = useMemo(() => {
+    if (!rollupData) return [];
+    return Array.from(new Set(rollupData.map((d: any) => d.Category)));
+  }, [rollupData]);
+
+  if (rollupError) return <div className="text-red-500 p-4">Failed to load data</div>;
+  if (!rollupData) return <div className="text-gray-500 p-4">Loading...</div>;
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
@@ -40,17 +52,27 @@ export default function DiceReport() {
 
       <div className="w-full h-[450px] bg-white rounded-2xl shadow-md p-4">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 10 }}>
+          <BarChart
+            data={data}
+            margin={{ top: 20, right: 30, left: 40, bottom: 10 }}
+          >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="City" />
             <YAxis
-              label={{ value: 'Revenue', angle: -90, position: 'insideLeft' }}
+              label={{
+                value: 'Revenue',
+                angle: -90,
+                position: 'insideLeft',
+              }}
               tickFormatter={(v) => v.toLocaleString()}
             />
-            <Tooltip formatter={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })} />
+            <Tooltip
+              formatter={(v) =>
+                v.toLocaleString(undefined, { maximumFractionDigits: 2 })
+              }
+            />
             <Legend />
 
-            {/* Generate bars per category dynamically */}
             {categories.map((cat, i) => (
               <Bar
                 key={cat}
