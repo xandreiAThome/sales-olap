@@ -13,23 +13,17 @@ import DiceDiv from '@/components/dice';
 import RollupDiv from '@/components/rollup';
 
 export default function Home() {
-  const [city, setCity] = useState('East Kobe');
-  const [fetchKey, setFetchKey] = useState<string | null>(null); // 🔹 only fetch when this changes
-
-  const { data: sliceData, error: sliceError, isLoading } = useSWR(fetchKey, fetcher);
-
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
-
-  const handleGenerate = () => {
-    if (!city.trim()) return;
-    setFetchKey(`http://localhost:4000/api/slice/${encodeURIComponent(city.trim())}`);
-  };
+  const { data: cities, error: citiesError } = useSWR(
+      'http://localhost:4000/api/cities',
+      fetcher
+  );
 
   return (
     <div className="flex flex-col justify-center min-h-screen p-24 bg-gray-100 gap-16">
+      {/* <RollupDiv /> */}
       {/* <SliceDiv /> */}
-      {/* <DiceDiv /> */}
-      <RollupDiv />
+      <DiceDiv cities={cities}/>
+      
     </div>
   );
 }

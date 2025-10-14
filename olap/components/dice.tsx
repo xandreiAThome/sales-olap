@@ -1,35 +1,61 @@
+'use client';
+
 import { fetcher } from '@/utils/fetcher';
-import React, { useMemo, useState } from 'react'
-import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar } from 'recharts';
+import React, { useMemo, useState } from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Bar,
+} from 'recharts';
 import useSWR from 'swr';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
+import Combobox from './combobox';
+
+interface DiceData {
+  cities: string[];
+}
 
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
 
-const DiceDiv = () => {
+const DiceDiv = ({ cities }: DiceData) => {
   const [city1, setCity1] = useState('');
   const [city2, setCity2] = useState('');
+  const [category1, setCategory1] = useState('');
+  const [category2, setCategory2] = useState('');
   const [fetchKey, setFetchKey] = useState<string | null>(null);
 
-  const { data: rollupData, error: rollupError, isLoading } = useSWR(
+  const { data: diceData, error: diceError, isLoading } = useSWR(
     fetchKey,
     fetcher
   );
 
+  const {data: categoriesData, error: categoriesError} = useSWR(
+    'http://localhost:4000/api/categories',
+    fetcher
+  );
+
   const handleGenerate = () => {
-    if (!city1 || !city2) return;
-    const url = `http://localhost:4000/api/dice/${encodeURIComponent(city1)}/${encodeURIComponent(city2)}`;
-    setFetchKey(url); // ✅ triggers SWR fetch
+    if (!city1 || !city2 || !category1 || !category2) return;
+    const url = `http://localhost:4000/api/dice/${encodeURIComponent(
+      city1
+    )}/${encodeURIComponent(city2)}/${encodeURIComponent(
+      category1
+    )}/${encodeURIComponent(category2)}`;
+    setFetchKey(url);
   };
 
   const data = useMemo(() => {
-    if (!rollupData || !Array.isArray(rollupData)) return [];
+    if (!diceData || !Array.isArray(diceData)) return [];
 
     const map: Record<string, any> = {};
 
-    rollupData
+    diceData
       .filter((d: any) => d.Year === DICE_YEAR && d.Quarter === DICE_QUARTER)
       .forEach(({ City, Category, total_revenue }: any) => {
         if (!map[City]) map[City] = { City };
@@ -37,13 +63,13 @@ const DiceDiv = () => {
       });
 
     return Object.values(map);
-  }, [rollupData]);
+  }, [diceData]);
 
+  // Dynamically extract categories after fetching
   const categories = useMemo(() => {
-    if (!rollupData || !Array.isArray(rollupData)) return [];
-    return Array.from(new Set(rollupData.map((d: any) => d.Category)));
-  }, [rollupData]);
-
+    if (!diceData || !Array.isArray(diceData)) return [];
+    return Array.from(new Set(diceData.map((d: any) => d.Category)));
+  }, [diceData]);
 
   return (
     <div className="p-8 bg-gray-50 h-auto">
@@ -51,31 +77,53 @@ const DiceDiv = () => {
         Dice Report: Cities vs Categories (Q{DICE_QUARTER}, {DICE_YEAR})
       </h1>
 
-      {/* City Inputs */}
-      <div className="flex gap-4 mb-6 justify-center">
-        <Input
+      {/* City and Category Selectors */}
+      <div className="flex flex-wrap gap-4 mb-6 justify-center">
+        <Combobox
+          label="City 1"
+          options={cities}
           value={city1}
-          onChange={(e) => setCity1(e.target.value)}
-          placeholder="Enter City 1"
-          className="w-[180px]"
+          onChange={setCity1}
+          placeholder="Select City 1"
         />
-        <Input
+        <Combobox
+          label="City 2"
+          options={cities}
           value={city2}
-          onChange={(e) => setCity2(e.target.value)}
-          placeholder="Enter City 2"
-          className="w-[180px]"
+          onChange={setCity2}
+          placeholder="Select City 2"
         />
-        <Button onClick={handleGenerate} disabled={!city1 || !city2}>
-          Generate Report
-        </Button>
+        <Combobox
+          label="Category 1"
+          options={categories.length ? categories : ['electronics', 'toys', 'clothing']}
+          value={category1}
+          onChange={setCategory1}
+          placeholder="Select Category 1"
+        />
+        <Combobox
+          label="Category 2"
+          options={categories.length ? categories : ['electronics', 'toys', 'clothing']}
+          value={category2}
+          onChange={setCategory2}
+          placeholder="Select Category 2"
+        />
+
+        <div className="flex items-end">
+          <Button
+            onClick={handleGenerate}
+            disabled={!city1 || !city2 || !category1 || !category2}
+          >
+            Generate Report
+          </Button>
+        </div>
       </div>
 
       {/* Chart or message */}
       {!fetchKey ? (
         <div className="text-gray-600 text-center mt-10">
-          Please enter two cities and click "Generate Report".
+          Please select two cities and two categories, then click "Generate Report".
         </div>
-      ) : rollupError ? (
+      ) : diceError ? (
         <div className="text-red-500 p-4 text-center">
           Failed to load data for {city1} and {city2}.
         </div>
@@ -84,7 +132,10 @@ const DiceDiv = () => {
       ) : (
         <div className="w-full h-[450px] bg-white rounded-2xl shadow-md p-4">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 30, left: 40, bottom: 10 }}>
+            <BarChart
+              data={data}
+              margin={{ top: 20, right: 30, left: 40, bottom: 10 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="City" />
               <YAxis
@@ -93,7 +144,9 @@ const DiceDiv = () => {
               />
               <Tooltip
                 formatter={(v) =>
-                  Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                  Number(v).toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })
                 }
               />
               <Legend />
@@ -110,7 +163,7 @@ const DiceDiv = () => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default DiceDiv
+export default DiceDiv;
