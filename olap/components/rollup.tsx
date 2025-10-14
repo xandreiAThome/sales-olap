@@ -3,10 +3,11 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectI
 import React, { useState } from 'react'
 import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, ResponsiveContainer } from 'recharts';
 import useSWR from 'swr';
+import { API_BASE_URL } from '@/lib/config';
 
 const RollupDiv = () => {
   const { data: rollupData, error: rollupError } = useSWR(
-    'http://localhost:4000/api/rollup',
+    `${API_BASE_URL}/api/rollup`,
     fetcher
   );
 

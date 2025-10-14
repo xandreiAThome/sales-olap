@@ -18,6 +18,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { API_BASE_URL } from '@/lib/config';
 
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
@@ -40,7 +41,7 @@ export default function DiceReport() {
 
   const handleGenerate = () => {
     if (!city1 || !city2) return;
-    const url = `http://localhost:4000/api/dice/${encodeURIComponent(city1)}/${encodeURIComponent(city2)}`;
+    const url = `${API_BASE_URL}/api/dice/${encodeURIComponent(city1)}/${encodeURIComponent(city2)}`;
     setFetchKey(url); // ✅ triggers SWR fetch
   };
 

@@ -4,6 +4,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recha
 import useSWR from 'swr';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { API_BASE_URL } from '@/lib/config';
 
 const SliceDiv = () => {
 
@@ -16,7 +17,7 @@ const SliceDiv = () => {
 
     const handleGenerate = () => {
         if (!city.trim()) return;
-        setFetchKey(`http://localhost:4000/api/slice/${encodeURIComponent(city.trim())}`);
+        setFetchKey(`${API_BASE_URL}/api/slice/${encodeURIComponent(city.trim())}`);
     };
 
   return (
