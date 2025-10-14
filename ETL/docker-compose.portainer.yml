@@ -26,26 +26,45 @@ services:
       start_period: 30s
     # Security: No ports exposed (only accessible within Docker network)
 
-  mysql_warehouse_db:
-    image: mysql:8.1
-    container_name: mysql_warehouse_db
+  postgres_warehouse_db:
+    image: postgres:16-alpine
+    container_name: postgres_warehouse_db
     restart: unless-stopped
-    command: >
-      --max-connections=200
     ports:
       # Exposed to localhost only - use SSH tunnel for remote access
-      - "127.0.0.1:3307:3306"
+      - "127.0.0.1:5432:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_WH_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_WH_DATABASE}
-      MYSQL_USER: ${MYSQL_WH_USER}
-      MYSQL_PASSWORD: ${MYSQL_WH_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_WH_DATABASE}
+      POSTGRES_USER: ${POSTGRES_WH_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_WH_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - mysql_warehouse_data:/var/lib/mysql
+      - postgres_warehouse_data:/var/lib/postgresql/data
     networks:
       - etl_network
+    command:
+      - "postgres"
+      # Memory settings
+      - "-c"
+      - "shared_buffers=512MB"              # Increased from 256MB
+      - "-c"
+      - "effective_cache_size=2GB"          # Increased from 1GB
+      - "-c"
+      - "maintenance_work_mem=512MB"        # Increased from 128MB (for index creation)
+      - "-c"
+      - "work_mem=32MB"                     # Increased from 16MB
+      # WAL and checkpoint settings for ETL performance
+      - "-c"
+      - "max_wal_size=4GB"                  # Allow larger WAL for bulk operations
+      - "-c"
+      - "checkpoint_completion_target=0.9"  # Smooth out checkpoint I/O
+      - "-c"
+      - "synchronous_commit=off"            # Faster commits (acceptable for ETL)
+      # Connection settings
+      - "-c"
+      - "max_connections=200"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_WH_ROOT_PASSWORD}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_WH_USER} -d ${POSTGRES_WH_DATABASE}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,10 +85,16 @@ services:
         condition: service_healthy
       mysql_warehouse_db:
         condition: service_healthy
+      postgres_warehouse_db:
+        condition: service_healthy
     environment:
       # Database connections use Docker service names
       DATABASE_SOURCE_URL: mysql+pymysql://${MYSQL_SRC_USER}:${MYSQL_SRC_PASSWORD}@mysql_src_db:3306/${MYSQL_SRC_DATABASE}
-      DATABASE_WAREHOUSE_URL: mysql+pymysql://${MYSQL_WH_USER}:${MYSQL_WH_PASSWORD}@mysql_warehouse_db:3306/${MYSQL_WH_DATABASE}
+      # Use either MySQL or PostgreSQL for warehouse (comment out the one you don't use)
+      # MySQL warehouse:
+      # DATABASE_WAREHOUSE_URL: mysql+pymysql://${MYSQL_WH_USER}:${MYSQL_WH_PASSWORD}@mysql_warehouse_db:3306/${MYSQL_WH_DATABASE}
+      # PostgreSQL warehouse:
+      DATABASE_WAREHOUSE_URL: postgresql://${POSTGRES_WH_USER}:${POSTGRES_WH_PASSWORD}@postgres_warehouse_db:5432/${POSTGRES_WH_DATABASE}
       BATCH_SIZE: ${BATCH_SIZE:-10000}
     networks:
       - etl_network
@@ -81,7 +106,7 @@ networks:
 volumes:
   mysql_src_data:
     driver: local
-  mysql_warehouse_data:
+  postgres_warehouse_data:
     driver: local
 
 # ============================================
@@ -91,10 +116,11 @@ volumes:
 # MYSQL_SRC_PASSWORD=<your-strong-password>
 # MYSQL_SRC_DATABASE=db_src
 #
-# MYSQL_WH_ROOT_PASSWORD=<your-strong-password>
-# MYSQL_WH_USER=devuser2
-# MYSQL_WH_PASSWORD=<your-strong-password>
-# MYSQL_WH_DATABASE=db_warehouse
+#
+# PostgreSQL Warehouse (recommended):
+# POSTGRES_WH_USER=devuser2
+# POSTGRES_WH_PASSWORD=<your-strong-password>
+# POSTGRES_WH_DATABASE=db_warehouse
 #
 # BATCH_SIZE=10000
 # ssh -N -L 3307:127.0.0.1:3307 root@
