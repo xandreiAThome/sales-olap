@@ -95,6 +95,9 @@ services:
     build:
       context: ./olap
       dockerfile: Dockerfile
+      args:
+        # Pass API URL at build time for Next.js to bake into the bundle
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
     # Or use pre-built image:
     # image: ghcr.io/xandreiathome/sales-olap-frontend:latest
     container_name: nextjs_frontend
@@ -106,7 +109,9 @@ services:
         condition: service_healthy
     environment:
       # Next.js environment variables
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # For browser access, use localhost:4000 (browser-to-host)
+      # For SSR/server-side, could use http://fastapi:4000 (container-to-container)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NODE_ENV: production
     networks:
       - app_network
