@@ -1,73 +1,16 @@
 from util.db_source import users
 from models.Dim_Users import Dim_Users
-import pandas as pd
 from util.db_source import Session_db_source
-from contextlib import contextmanager
 from util.db_warehouse import db_warehouse_engine
 from util.logging_config import get_logger
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select, func, case, text
-import itertools
+from sqlalchemy import select, text
 import os
-import gc
 import io
 import csv
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 50000)  # Larger batches for PostgreSQL
 
 logger = get_logger(__name__)
-
-
-# @contextmanager
-# def extract_users_stream():
-#     """Context-managed stream of users rows from source DB as mappings."""
-#     session = Session_db_source()
-#     result = None
-#     try:
-#         # PostgreSQL/SQLAlchemy title case: CONCAT(UPPER(SUBSTRING(col, 1, 1)), LOWER(SUBSTRING(col, 2)))
-#         def title_case(column):
-#             return func.concat(
-#                 func.upper(func.substring(column, 1, 1)),
-#                 func.lower(func.substring(column, 2))
-#             )
-        
-#         stmt = select(
-#             users.c.id.label("Users_ID"),
-#             func.trim(title_case(users.c.firstName)).label("First_Name"),
-#             func.trim(title_case(users.c.lastName)).label("Last_Name"),
-#             func.trim(users.c.username).label("Username"),
-#             func.trim(title_case(users.c.city)).label("City"),
-#             func.trim(title_case(users.c.country)).label("Country"),
-#             func.regexp_replace(func.trim(users.c.zipCode), r'[^0-9]', '').label("Zipcode"),
-#             case(
-#                 (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "m", "male"),
-#                 (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "f", "female"),
-#                 else_=None
-#             ).label("Gender"),
-#         )
-#         result = session.execute(
-#             stmt.execution_options(stream_results=True, yield_per=BATCH_SIZE)
-#         ).mappings()
-#         yield result
-#     except Exception as e:
-#         logger.error(f"Error streaming users: {e}")
-#         raise
-#     finally:
-#         # Ensure result is properly closed before session
-#         if result is not None:
-#             try:
-#                 result.close()
-#             except Exception as e:
-#                 logger.warning(f"Error closing result: {e}")
-#         # Close session after result
-#         try:
-#             session.close()
-#         except Exception as e:
-#             logger.warning(f"Error closing session: {e}")
-
-
-
-
 
 def transform_and_load_users():
     """
