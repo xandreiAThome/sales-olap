@@ -19,6 +19,7 @@ import {
   Legend,
   Bar,
   ResponsiveContainer,
+  Line,
 } from 'recharts';
 import useSWR from 'swr';
 
@@ -34,21 +35,18 @@ const RollupDiv = () => {
   if (rollupError) return <div className="p-6 text-red-500 font-semibold">Failed to load data 😢</div>;
   if (!rollupData) return <div className="p-6 text-gray-500 italic">Loading rollup data...</div>;
 
-  const grouped: Record<string, number> = {}; // for Year & Month
-  const quarterMap: Record<string, number> = {}; // keys like 'Q1-2024' or 'Q1'
-  const yearTotals: Record<number, number> = {}; // sums per year for appending to Quarter view
+  const grouped: Record<string, number> = {}; 
+  const quarterMap: Record<string, number> = {};
+  const yearTotals: Record<number, number> = {};
 
-  // Build buckets
   rollupData.forEach((item: any) => {
     const year = item.Year ?? null;
     const quarter = item.Quarter ?? null;
     const monthRaw = item.Month ?? null;
     const rev = item.revenue ?? 0;
 
-    // normalize month to number if possible (handles '01' etc.)
     const month = monthRaw != null ? (Number.isFinite(Number(monthRaw)) ? parseInt(String(monthRaw), 10) : monthRaw) : null;
 
-    // Year view
     if (filterKey === 'Year') {
       if (year == null && quarter == null && month == null) {
         grouped['Total Revenue'] = (grouped['Total Revenue'] || 0) + rev;
@@ -59,7 +57,6 @@ const RollupDiv = () => {
       }
     }
 
-    // Quarter view
     else if (filterKey === 'Quarter') {
       if (year == null && quarter == null && month == null) return;
 
@@ -84,26 +81,21 @@ const RollupDiv = () => {
       }
     }
 
-    // Month view: include year in month label when available (M{n}-{year}), otherwise skip rows without month
     else if (filterKey === 'Month') {
       if (month == null) {
-        // explicitly skip rows without month to avoid year/quarter buckets appearing
         return;
       }
 
       if (year != null) {
         grouped[`M${month}-${year}`] = (grouped[`M${month}-${year}`] || 0) + rev;
       } else {
-        // month exists but no year -> group as M{n}
         grouped[`M${month}`] = (grouped[`M${month}`] || 0) + rev;
       }
     }
   });
 
-  // Compute grand total for Year view
   const totalAll = rollupData.reduce((s: number, it: any) => s + (it.revenue ?? 0), 0);
 
-  // Build aggregatedData depending on filterKey
   let aggregatedData: { label: string; revenue: number }[] = [];
 
   if (filterKey === 'Quarter') {
@@ -128,7 +120,6 @@ const RollupDiv = () => {
 
     aggregatedData.push(...yearEntries);
   } else {
-    // Year or Month: grouped map
     aggregatedData = Object.entries(grouped).map(([label, revenue]) => ({ label, revenue }));
 
     if (filterKey === 'Year') {
@@ -147,7 +138,6 @@ const RollupDiv = () => {
         return a.label.localeCompare(b.label);
       });
     } else {
-      // Month view sorting: prioritize M{n}-{year} by year then month, then M{n} (no year)
       aggregatedData = aggregatedData
         .map((d) => ({ ...d }))
         .sort((a, b) => {
@@ -160,7 +150,6 @@ const RollupDiv = () => {
           }
           const aNoYear = a.label.match(/^M(\d+)$/);
           const bNoYear = b.label.match(/^M(\d+)$/);
-          // put yeared months before non-yeared months
           if (am && bNoYear) return -1;
           if (aNoYear && bm) return 1;
           if (aNoYear && bNoYear) return parseInt(aNoYear[1], 10) - parseInt(bNoYear[1], 10);
@@ -201,6 +190,16 @@ const RollupDiv = () => {
           <Tooltip formatter={(value: number) => `₱${(value / 1e9).toFixed(2)}B`} labelFormatter={(label) => `${filterKey}: ${label}`} />
           <Legend />
           <Bar dataKey="revenue" name="Total Revenue" fill="#3b82f6" />
+
+          <Line
+            type="monotone"
+            dataKey="revenue"
+            stroke="#ef4444"
+            strokeWidth={3}
+            dot={{ r: 4, stroke: '#ef4444', strokeWidth: 2 }}
+            activeDot={{ r: 6 }}
+            name="Revenue Trend"
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
