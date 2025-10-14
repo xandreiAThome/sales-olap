@@ -225,6 +225,14 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
+
+# Docker sensitive files
+ETL/backups/
+ETL/mysql-ssl/
+*.pem
+*.key
+*.crt
 
 # OS files
 .DS_Store

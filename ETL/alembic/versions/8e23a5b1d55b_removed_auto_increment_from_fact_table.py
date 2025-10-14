@@ -1,8 +1,8 @@
-"""added indexes
+"""removed auto increment from fact table
 
-Revision ID: 1d4d9a2a94ec
-Revises: 
-Create Date: 2025-10-12 11:28:43.958294
+Revision ID: 8e23a5b1d55b
+Revises: 208f8b938be4
+Create Date: 2025-10-13 20:42:28.587644
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1d4d9a2a94ec'
-down_revision: Union[str, Sequence[str], None] = '00000000000_initial'
+revision: str = '8e23a5b1d55b'
+down_revision: Union[str, Sequence[str], None] = '208f8b938be4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

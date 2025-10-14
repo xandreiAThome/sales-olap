@@ -1,8 +1,6 @@
 dotenv
 sqlalchemy
-pandas
-mysql-connector-python
-pymysql
+psycopg2-binary
 cryptography
 sympy
 alembic

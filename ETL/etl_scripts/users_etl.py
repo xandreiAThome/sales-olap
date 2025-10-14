@@ -3,142 +3,186 @@ from models.Dim_Users import Dim_Users
 import pandas as pd
 from util.db_source import Session_db_source
 from contextlib import contextmanager
-from util.db_warehouse import Session_db_warehouse
+from util.db_warehouse import db_warehouse_engine
 from util.logging_config import get_logger
-from util.utils import parse_date
-from util.utils import clean_phone_number
-from sqlalchemy.dialects.mysql import insert
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select, func, case, text
 import itertools
 import os
-
-BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 2000)
 import gc
+import io
+import csv
+
+BATCH_SIZE = int(os.getenv("BATCH_SIZE") or 50000)  # Larger batches for PostgreSQL
 
 logger = get_logger(__name__)
 
 
-@contextmanager
-def extract_users_stream():
-    """Context-managed stream of users rows from source DB as mappings."""
-    session = Session_db_source()
-    result = None
-    try:
-        result = session.execute(
-            users.select().execution_options(stream_results=True, yield_per=BATCH_SIZE)
-        ).mappings()
-        yield result
-    except Exception as e:
-        logger.error(f"Error streaming users: {e}")
-        raise
-    finally:
-        # Ensure result is properly closed before session
-        if result is not None:
-            try:
-                result.close()
-            except Exception as e:
-                logger.warning(f"Error closing result: {e}")
-        # Close session after result
-        try:
-            session.close()
-        except Exception as e:
-            logger.warning(f"Error closing session: {e}")
+# @contextmanager
+# def extract_users_stream():
+#     """Context-managed stream of users rows from source DB as mappings."""
+#     session = Session_db_source()
+#     result = None
+#     try:
+#         # PostgreSQL/SQLAlchemy title case: CONCAT(UPPER(SUBSTRING(col, 1, 1)), LOWER(SUBSTRING(col, 2)))
+#         def title_case(column):
+#             return func.concat(
+#                 func.upper(func.substring(column, 1, 1)),
+#                 func.lower(func.substring(column, 2))
+#             )
+        
+#         stmt = select(
+#             users.c.id.label("Users_ID"),
+#             func.trim(title_case(users.c.firstName)).label("First_Name"),
+#             func.trim(title_case(users.c.lastName)).label("Last_Name"),
+#             func.trim(users.c.username).label("Username"),
+#             func.trim(title_case(users.c.city)).label("City"),
+#             func.trim(title_case(users.c.country)).label("Country"),
+#             func.regexp_replace(func.trim(users.c.zipCode), r'[^0-9]', '').label("Zipcode"),
+#             case(
+#                 (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "m", "male"),
+#                 (func.lower(func.substring(func.trim(users.c.gender), 1, 1)) == "f", "female"),
+#                 else_=None
+#             ).label("Gender"),
+#         )
+#         result = session.execute(
+#             stmt.execution_options(stream_results=True, yield_per=BATCH_SIZE)
+#         ).mappings()
+#         yield result
+#     except Exception as e:
+#         logger.error(f"Error streaming users: {e}")
+#         raise
+#     finally:
+#         # Ensure result is properly closed before session
+#         if result is not None:
+#             try:
+#                 result.close()
+#             except Exception as e:
+#                 logger.warning(f"Error closing result: {e}")
+#         # Close session after result
+#         try:
+#             session.close()
+#         except Exception as e:
+#             logger.warning(f"Error closing session: {e}")
 
 
-def clean_users_data(data):
-    try:
-        # Accept either a pandas DataFrame or an iterable of mappings
-        if isinstance(data, pd.DataFrame):
-            df = data.copy()
-        else:
-            df = pd.DataFrame([dict(r) for r in data])
 
-        df.dropna(inplace=True)
-
-        df["username"] = df["username"].str.strip()
-        df["firstName"] = df["firstName"].str.title().str.strip()
-        df["lastName"] = df["lastName"].str.title().str.strip()
-        df["address1"] = df["address1"].str.strip().str.title()
-        df["address2"] = df["address2"].str.strip().str.title()
-        df["city"] = df["city"].str.strip().str.title()
-        df["country"] = df["country"].str.strip().str.title()
-        df["zipCode"] = df["zipCode"].str.strip().str.extract(r"(\d+)").astype(str)
-        df["dateOfBirthClean"] = (
-            df["dateOfBirth"]
-            .astype(str)
-            .str.strip()  # remove spaces
-            .str.replace(r"[^\d/-]", "", regex=True)  # keep only digits, /, -
-        )
-        df["dateOfBirth"] = df["dateOfBirthClean"].apply(parse_date)
-        df["gender"] = (
-            df["gender"].str.strip().str.lower().replace({"m": "male", "f": "female"})
-        )
-        df["phoneNumber"] = df["phoneNumber"].apply(clean_phone_number)
-
-        df = df.rename(
-            columns={
-                "id": "Users_ID",
-                "username": "Username",
-                "firstName": "First_Name",
-                "lastName": "Last_Name",
-                "dateOfBirth": "Birth_Date",
-                "address1": "Address_1",
-                "address2": "Address_2",
-                "city": "City",
-                "country": "Country",
-                "zipCode": "Zipcode",
-                "phoneNumber": "Phone_Number",
-                "gender": "Gender",
-            }
-        )
-        df.drop(columns=["dateOfBirthClean", "createdAt", "updatedAt"], inplace=True)
-
-        cleaned_data = df.to_dict(orient="records")
-        # logger.info(f"Cleaned users data, {len(cleaned_data)} records ready.")
-        return cleaned_data
-    except Exception as e:
-        logger.error(f"Error cleaning users data: {e}")
-        return []
 
 
 def transform_and_load_users():
-    db_session = Session_db_warehouse()
-    total_inserted = 0
+    """
+    Load users using PostgreSQL COPY for maximum speed.
+    Truncates table first for full reload.
+    """
+    source_session = Session_db_source()
+    conn = db_warehouse_engine.connect()
+    
     try:
-        with extract_users_stream() as user_iter:
-            while True:
-                chunk_rows = list(itertools.islice(user_iter, BATCH_SIZE))
-                if not chunk_rows:
-                    break
+        logger.info(f"Extracting users from source database...")
+        
+        # Simple fast query - no complex SQL transformations
+        stmt = select(
+            users.c.id,
+            users.c.firstName,
+            users.c.lastName,
+            users.c.username,
+            users.c.city,
+            users.c.country,
+            users.c.zipCode,
+            users.c.gender,
+        )
+        
+        # Fetch ALL rows at once - much faster than streaming for 100K rows
+        result = source_session.execute(stmt).fetchall()
+        logger.info(f"Fetched {len(result)} users from source")
+        
+        # Transform ALL rows in Python (faster than complex SQL)
+        logger.info("Transforming data in Python...")
+        records = []
+        for row in result:
+            # Title case helper
+            def tc(s):
+                return s.strip().title() if s else None
+            
+            # Gender normalization
+            gender = None
+            if row.gender:
+                first_char = row.gender.strip().lower()[0] if row.gender.strip() else None
+                if first_char == 'm':
+                    gender = 'male'
+                elif first_char == 'f':
+                    gender = 'female'
+            
+            # Zipcode - keep only digits
+            zipcode = ''.join(c for c in (row.zipCode or '') if c.isdigit())
+            
+            records.append({
+                "Users_ID": row.id,
+                "First_Name": tc(row.firstName),
+                "Last_Name": tc(row.lastName),
+                "Username": row.username.strip() if row.username else None,
+                "City": tc(row.city),
+                "Country": tc(row.country),
+                "Zipcode": zipcode if zipcode else None,
+                "Gender": gender,
+            })
+        
+        logger.info(f"Transformed {len(records)} records")
+        
+        # Single transaction
+        with conn.begin():
+            # Truncate for full reload
+            logger.info("Truncating table for full reload...")
+            conn.execute(text(f"TRUNCATE TABLE {Dim_Users.__tablename__} CASCADE"))
+            logger.info("Table truncated")
+            
+            # Use PostgreSQL COPY for maximum speed
+            if records:
+                logger.info(f"Using PostgreSQL COPY for {len(records)} users...")
+                
+                # Create CSV in memory
+                csv_buffer = io.StringIO()
+                writer = csv.writer(csv_buffer)
+                
+                # Write rows in the correct column order
+                for record in records:
+                    writer.writerow([
+                        record['Users_ID'],
+                        record['Username'],
+                        record['First_Name'],
+                        record['Last_Name'],
+                        record['City'],
+                        record['Country'],
+                        record['Zipcode'],
+                        record['Gender'],
+                    ])
+                
+                # Reset buffer to start
+                csv_buffer.seek(0)
+                
+                # Use raw connection for COPY
+                raw_conn = conn.connection
+                cursor = raw_conn.cursor()
+                
+                # PostgreSQL COPY - fastest bulk load method
+                cursor.copy_expert(
+                    f"""
+                    COPY {Dim_Users.__tablename__} (
+                        "Users_ID", "Username", "First_Name", "Last_Name",
+                        "City", "Country", "Zipcode", "Gender"
+                    ) FROM STDIN WITH CSV
+                    """,
+                    csv_buffer
+                )
+                
+                logger.info("COPY completed")
+                logger.info("Committing transaction...")
 
-                # Use centralized cleaning function on the DataFrame chunk
-                records = clean_users_data(chunk_rows)
-                if records:
-                    stmt = insert(Dim_Users).values(records)
-                    stmt = stmt.on_duplicate_key_update(
-                        Username=stmt.inserted.Username,
-                        First_Name=stmt.inserted.First_Name,
-                        Last_Name=stmt.inserted.Last_Name,
-                        Birth_Date=stmt.inserted.Birth_Date,
-                        Address_1=stmt.inserted.Address_1,
-                        Address_2=stmt.inserted.Address_2,
-                        City=stmt.inserted.City,
-                        Country=stmt.inserted.Country,
-                        Zipcode=stmt.inserted.Zipcode,
-                        Phone_Number=stmt.inserted.Phone_Number,
-                        Gender=stmt.inserted.Gender,
-                    )
-                    db_session.execute(stmt)
-                    db_session.commit()
-                    total_inserted += len(records)
-
-                del records, chunk_rows
-                gc.collect()
-
-        logger.info(f"Upserted {total_inserted} users in batches of {BATCH_SIZE}")
+        logger.info(f"✅ Core insert completed! Upserted {len(records)} users")
 
     except Exception as e:
         logger.error(f"Error during transform/load users: {e}", exc_info=True)
-        db_session.rollback()
         raise
     finally:
-        db_session.close()
+        source_session.close()
+        conn.close()
