@@ -108,8 +108,8 @@ def run_raw_query(city: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
     
 
-@app.get("/api/dice/{city1}/{city2}")
-def run_raw_query(city1: str, city2: str, db: Session = Depends(get_db)):
+@app.get("/api/dice/{city1}/{city2}/{category1}/{category2}")
+def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Session = Depends(get_db)):
     try:
         sql = text("""
             SELECT du.City, dp.Category, dd.`Year`, dd.Quarter, SUM(foi.Total_Revenue) AS total_revenue
@@ -118,7 +118,7 @@ def run_raw_query(city1: str, city2: str, db: Session = Depends(get_db)):
             JOIN dim_products dp ON dp.Product_ID = foi.Product_ID
             JOIN dim_date dd ON dd.Date_ID = foi.Delivery_Date_ID
             WHERE du.City IN (:city1, :city2)
-              AND dp.Category IN ('electronics', 'toys')
+              AND dp.Category IN (:category1, :category2)
               AND dd.`Year` = '2025'
               AND dd.Quarter = 2
             GROUP BY du.City, dp.Category, dd.`Year`, dd.Quarter
@@ -142,6 +142,19 @@ def run_raw_query(db: Session = Depends(get_db)):
         rows = result.fetchall()
 
         return [row._mapping["City"] for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/categories")
+def run_raw_query(db: Session = Depends(get_db)):
+    try:
+        sql = text("""
+            SELECT DISTINCT Category FROM dim_products
+        """)
+        result = db.execute(sql)
+        rows = result.fetchall()
+
+        return [row._mapping["Category"] for row in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
