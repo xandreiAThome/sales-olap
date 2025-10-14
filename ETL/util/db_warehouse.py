@@ -18,15 +18,15 @@ database_warehouse_url = os.getenv("DATABASE_WAREHOUSE_URL")
 if not database_warehouse_url:
     raise ValueError("DATABASE_WAREHOUSE_URL environment variable not set")
 
-# Add local_infile=1 to connection string for LOAD DATA LOCAL INFILE support
-if "?" in database_warehouse_url:
-    database_warehouse_url += "&local_infile=1"
-else:
-    database_warehouse_url += "?local_infile=1"
-
 db_warehouse_engine = create_engine(
-    database_warehouse_url, echo=False
-)  # set to false for production
+    database_warehouse_url,
+    echo=False,
+    # Connection pooling for better performance
+    pool_size=10,              # Keep 10 connections ready
+    max_overflow=20,           # Allow 20 more if needed
+    pool_pre_ping=True,        # Verify connection health before use
+    pool_recycle=3600,         # Recycle connections every hour
+)
 Session_db_warehouse = sessionmaker(bind=db_warehouse_engine)
 
 # Don't create tables here - let Alembic migrations handle it
