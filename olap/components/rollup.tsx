@@ -1,8 +1,7 @@
 import { fetcher } from '@/utils/fetcher';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@radix-ui/react-select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem} from '@/components/ui/select';
 import React, { useState } from 'react'
-import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar } from 'recharts';
-import { ResponsiveContainer } from 'recharts/types/component/ResponsiveContainer';
+import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, ResponsiveContainer } from 'recharts';
 import useSWR from 'swr';
 
 const RollupDiv = () => {
