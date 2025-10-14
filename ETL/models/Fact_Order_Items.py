@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Numeric, String, Index
+from sqlalchemy import Column, ForeignKey, Integer, BigInteger, Numeric, String, Index
 from .base import Base
 
 
@@ -6,7 +6,7 @@ class Fact_Order_Items(Base):
     __tablename__ = "fact_order_items"
 
     Order_Item_ID = Column(
-        Integer, primary_key=True, unique=True, nullable=False, autoincrement=True
+        BigInteger, primary_key=True, unique=True, nullable=False, autoincrement=False
     )
     Product_ID = Column(Integer, ForeignKey("dim_products.Product_ID"), nullable=False)
     Quantity = Column(Integer, nullable=False)

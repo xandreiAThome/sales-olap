@@ -1,7 +1,7 @@
 from util.db_source import products
 from sqlalchemy.dialects.mysql import insert
 from models.Dim_Products import Dim_Products
-import pandas as pd
+from sqlalchemy import select, func, case
 from util.db_source import Session_db_source
 from contextlib import contextmanager
 from util.db_warehouse import Session_db_warehouse
@@ -17,13 +17,46 @@ logger = get_logger(__name__)
 
 @contextmanager
 def extract_products_stream():
-    """Context-managed stream of products rows from source DB as mappings."""
+   
     session = Session_db_source()
     result = None
     try:
-        result = session.execute(
-            products.select().execution_options(stream_results=True, yield_per=BATCH_SIZE)
-        ).mappings()
+        # MySQL title case: CONCAT(UPPER(SUBSTRING(col, 1, 1)), LOWER(SUBSTRING(col, 2)))
+        def title_case(column):
+            return func.concat(
+                func.upper(func.substring(column, 1, 1)),
+                func.lower(func.substring(column, 2))
+            )
+        
+        # SQL query with data cleaning transformations
+        stmt = select(
+            products.c.id.label("Product_ID"),
+            func.trim(products.c.productCode).label("Product_Code"),
+            func.trim(title_case(products.c.name)).label("Name"),
+            # Category normalization using CASE statement
+            func.lower(
+                case(
+                    (func.lower(products.c.category).in_(['toy', 'toys']), 'toys'),
+                    (func.lower(products.c.category).in_(['makeup', 'make up']), 'makeup'),
+                    (func.lower(products.c.category).in_(['bag', 'bags']), 'bags'),
+                    (func.lower(products.c.category).in_(['electronics', 'gadgets', 'laptops']), 'electronics'),
+                    (func.lower(products.c.category).in_(['men\'s apparel', 'clothes']), 'apparel'),
+                    else_=func.trim(products.c.category)
+                )
+            ).label("Category"),
+            func.trim(products.c.description).label("Description"),
+            products.c.price.label("Price"),
+        ).where(
+            # Filter out rows with NULL in required fields
+            products.c.id.isnot(None),
+            products.c.productCode.isnot(None),
+            products.c.name.isnot(None),
+            products.c.category.isnot(None),
+            products.c.description.isnot(None),
+            products.c.price.isnot(None),
+        ).execution_options(stream_results=True, yield_per=BATCH_SIZE)
+        
+        result = session.execute(stmt).mappings()
         yield result
     except Exception as e:
         logger.error(f"Error streaming products: {e}")
@@ -42,43 +75,11 @@ def extract_products_stream():
             logger.warning(f"Error closing session: {e}")
 
 
-def clean_products_data(data):
-    try:
-        # Accept either a pandas DataFrame or an iterable of row mappings
-        if isinstance(data, pd.DataFrame):
-            df = data.copy()
-        else:
-            df = pd.DataFrame([dict(r) for r in data])
-
-        df.dropna(inplace=True)
-
-        df["productCode"] = df["productCode"].str.strip()
-        df["category"] = df["category"].str.lower().str.strip()
-        df["description"] = df["description"].str.strip()
-        df["name"] = df["name"].str.title().str.strip()
-
-        df = df.rename(
-            columns={
-                "productCode": "Product_Code",
-                "id": "Product_ID",
-                "name": "Name",
-                "category": "Category",
-                "description": "Description",
-                "price": "Price",
-            }
-        )
-        df.drop(columns=["createdAt", "updatedAt"], errors="ignore", inplace=True)
-
-        cleaned_data = df.to_dict(orient="records")
-        # logger.info(f"Cleaned products data, {len(cleaned_data)} records ready.")
-        return cleaned_data
-    except Exception as e:
-        logger.error(f"Error cleaning products data: {e}")
-        return []
-
-
 def transform_and_load_products():
-    # Stream-extract -> chunk -> clean -> upsert per chunk
+    """
+    Stream-extract -> chunk -> load directly to warehouse.
+    Data cleaning is done in SQL during extraction.
+    """
     conn_session = Session_db_warehouse()
     total_inserted = 0
     try:
@@ -88,17 +89,12 @@ def transform_and_load_products():
                 if not chunk_rows:
                     break
 
-                records = clean_products_data(chunk_rows)
+                # Convert mappings to list of dicts (already cleaned by SQL)
+                records = [dict(row) for row in chunk_rows]
 
                 if records:
-                    stmt = insert(Dim_Products).values(records)
-                    stmt = stmt.on_duplicate_key_update(
-                        Product_Code=stmt.inserted.Product_Code,
-                        Name=stmt.inserted.Name,
-                        Category=stmt.inserted.Category,
-                        Description=stmt.inserted.Description,
-                        Price=stmt.inserted.Price,
-                    )
+                    # Use INSERT IGNORE to skip duplicates (faster than ON DUPLICATE KEY UPDATE)
+                    stmt = insert(Dim_Products).prefix_with("IGNORE").values(records)
                     conn_session.execute(stmt)
                     conn_session.commit()
                     total_inserted += len(records)

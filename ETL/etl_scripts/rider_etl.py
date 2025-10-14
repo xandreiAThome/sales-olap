@@ -1,7 +1,7 @@
 from util.db_source import riders, couriers
 from sqlalchemy import select
 from models.Dim_Riders import Dim_Rider
-import pandas as pd
+from sqlalchemy import select, func, case
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse
 from util.logging_config import get_logger
@@ -11,22 +11,46 @@ logger = get_logger(__name__)
 
 
 def extract_riders_with_couriers():
-    """Extract riders joined with couriers from the source DB (server-side join)."""
     session = Session_db_source()
     try:
+        # MySQL title case: CONCAT(UPPER(SUBSTRING(col, 1, 1)), LOWER(SUBSTRING(col, 2)))
+        def title_case(column):
+            return func.concat(
+                func.upper(func.substring(column, 1, 1)),
+                func.lower(func.substring(column, 2))
+            )
+        
+        # Normalize vehicle types to standard categories
+        vehicle_type_normalized = case(
+            (func.lower(func.trim(riders.c.vehicleType)).in_(["bicycle", "bike"]), "bicycle"),
+            (func.lower(func.trim(riders.c.vehicleType)).in_(["motorbike", "motorcycle"]), "motorcycle"),
+            (func.lower(func.trim(riders.c.vehicleType)) == "trike", "trike"),
+            (func.lower(func.trim(riders.c.vehicleType)) == "car", "car"),
+            else_=func.lower(func.trim(riders.c.vehicleType))  # Keep original if not matched
+        )
+        
         stmt = select(
-            riders.c.id.label("id"),
-            riders.c.firstName,
-            riders.c.lastName,
-            riders.c.vehicleType,
-            riders.c.age,
-            riders.c.gender,
-            riders.c.courierId,
-            couriers.c.name.label("courier_name"),
+            riders.c.id.label("Rider_ID"),
+            func.trim(title_case(riders.c.firstName)).label("First_Name"),
+            func.trim(title_case(riders.c.lastName)).label("Last_Name"),
+            case(
+                (func.lower(func.trim(riders.c.vehicleType)).in_(["bicycle", "bike"]), "bicycle"),
+                (func.lower(func.trim(riders.c.vehicleType)).in_(["motorbike", "motorcycle"]), "motorcycle"),
+                (func.lower(func.trim(riders.c.vehicleType)) == "trike", "trike"),
+                (func.lower(func.trim(riders.c.vehicleType)) == "car", "car"),
+                else_=func.lower(func.trim(riders.c.vehicleType))
+            ).label("Vehicle_Type"),
+            riders.c.age.label("Age"),
+            case(
+                (func.lower(func.substring(func.trim(riders.c.gender), 1, 1)) == "m", "male"),
+                (func.lower(func.substring(func.trim(riders.c.gender), 1, 1)) == "f", "female"),
+                else_=None
+            ).label("Gender"),
+            couriers.c.name.label("Courier_Name")
         ).select_from(riders.outerjoin(couriers, riders.c.courierId == couriers.c.id))
 
         result = session.execute(stmt).mappings().all()
-        logger.info(f"Extracted {len(result)} joined riders rows from source DB.")
+        logger.info(f"Extracted {len(result)} cleaned joined riders rows from source DB.")
         return result
     except Exception as e:
         logger.error(f"Error extracting joined riders+couriers: {e}")
@@ -34,72 +58,18 @@ def extract_riders_with_couriers():
     finally:
         session.close()
 
-
-def clean_joined_riders_data(data):
-    """Clean rows returned by the joined extract (rider + courier_name).
-
-    Keeps required rider fields and normalizes strings. Uses a conservative
-    dropna that only drops rows missing essential rider identifiers.
-    """
-    try:
-        # data is a list of mapping objects from .mappings()
-        df = pd.DataFrame([dict(r) for r in data])
-
-        # Drop rows missing essential identifiers only
-        required = ["id", "firstName", "lastName"]
-        df.dropna(subset=required, inplace=True)
-
-        df["vehicleType"] = df["vehicleType"].astype(str).str.lower().str.strip()
-        df["gender"] = (
-            df["gender"].astype(str).str.lower().str.strip().replace({"m": "male", "f": "female"})
-        )
-        df["firstName"] = df["firstName"].astype(str).str.title().str.strip()
-        df["lastName"] = df["lastName"].astype(str).str.title().str.strip()
-
-        # Normalize courier name if present
-        if "courier_name" in df.columns:
-            df["courier_name"] = df["courier_name"].fillna("").astype(str).str.upper().str.strip()
-
-        cleaned_data = df.to_dict(orient="records")
-        # logger.info(f"Cleaned joined riders data, {len(cleaned_data)} records ready.")
-        return cleaned_data
-    except Exception as e:
-        logger.error(f"Error cleaning joined riders data: {e}")
-        return []
-
-
 def transform_and_load_riders():
     # Extract joined rows from source DB (server-side join)
     joined_rows = extract_riders_with_couriers()
-    cleaned = clean_joined_riders_data(joined_rows)
 
     session = Session_db_warehouse()
     try:
-        rider_records = [
-            {
-                "Rider_ID": r["id"],
-                "First_Name": r["firstName"],
-                "Last_Name": r["lastName"],
-                "Vehicle_Type": r.get("vehicleType"),
-                "Age": r.get("age"),
-                "Gender": r.get("gender"),
-                "Courier_Name": r.get("courier_name") or None,
-            }
-            for r in cleaned
-        ]
-
-        if rider_records:
-            stmt = insert(Dim_Rider).values(rider_records)
-
-            # Define how to update existing Rider_ID rows
-            stmt = stmt.on_duplicate_key_update(
-                First_Name=stmt.inserted.First_Name,
-                Last_Name=stmt.inserted.Last_Name,
-                Vehicle_Type=stmt.inserted.Vehicle_Type,
-                Age=stmt.inserted.Age,
-                Gender=stmt.inserted.Gender,
-                Courier_Name=stmt.inserted.Courier_Name,
-            )
+        if joined_rows:
+            # Convert mappings to list of dicts
+            rider_records = [dict(row) for row in joined_rows]
+            
+            # Use INSERT IGNORE to skip duplicates (faster than ON DUPLICATE KEY UPDATE)
+            stmt = insert(Dim_Rider).prefix_with("IGNORE").values(rider_records)
 
             session.execute(stmt)
             session.commit()
