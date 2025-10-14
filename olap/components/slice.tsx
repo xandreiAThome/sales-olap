@@ -21,8 +21,11 @@ const SliceDiv = () => {
 
   return (
     <div>
-        <div className="flex flex-col items-center">
-
+        <div className="flex flex-col items-center bg-gray-50 p-8 rounded-2xl shadow-md">
+            <h1 className="text-3xl font-bold mb-6 text-gray-800 text-center">
+            Slice Report - Product Breakdown
+            </h1>
+            
             {/* Input + Button */}
             <div className='flex gap-4'>
             <Input

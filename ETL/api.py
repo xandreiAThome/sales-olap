@@ -125,7 +125,7 @@ def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Se
             ORDER BY total_revenue DESC;
         """)
         
-        result = db.execute(sql, {"city1": city1, "city2": city2})
+        result = db.execute(sql, {"city1": city1, "city2": city2, "category1": category1, "category2": category2})
         rows = result.fetchall()
 
         return [dict(row._mapping) for row in rows]

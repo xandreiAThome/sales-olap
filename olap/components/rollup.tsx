@@ -10,10 +10,9 @@ const RollupDiv = () => {
     fetcher
   );
 
-  type FilterKey = 'Year' | 'Quarter' | 'Month'; // 👈 match your API keys (case-sensitive)
+  type FilterKey = 'Year' | 'Quarter' | 'Month';
   const [filterKey, setFilterKey] = useState<FilterKey>('Year');
 
-  // --- Handle loading/error states ---
   if (rollupError) {
     return <div className="p-6 text-red-500 font-semibold">Failed to load data 😢</div>;
   }
@@ -22,12 +21,11 @@ const RollupDiv = () => {
     return <div className="p-6 text-gray-500 italic">Loading rollup data...</div>;
   }
 
-  // --- Aggregate data ---
   const grouped: Record<string, number> = {};
 
   rollupData.forEach((item: any) => {
     const key = item[filterKey];
-    grouped[key] = (grouped[key] || 0) + item.revenue; // 👈 use correct property
+    grouped[key] = (grouped[key] || 0) + item.revenue; 
   });
 
   const aggregatedData = Object.entries(grouped).map(([key, total]) => ({
@@ -70,7 +68,7 @@ const RollupDiv = () => {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey={xKey} />
           <YAxis
-            tickFormatter={(v) => `${(v / 1e9).toFixed(2)}B`} // ✅ display billions
+            tickFormatter={(v) => `${(v / 1e9).toFixed(2)}B`}
             label={{
               value: 'Revenue (Billion ₱)',
               angle: -90,
@@ -81,7 +79,7 @@ const RollupDiv = () => {
           <Tooltip
             formatter={(value: number) =>
               `₱${(value / 1e9).toFixed(2)}B`
-            } // ✅ tooltip shows billions
+            }
             labelFormatter={(label) => `${filterKey}: ${label}`}
           />
           <Legend />

@@ -28,12 +28,15 @@ const DrillDownDiv = () => {
 
     const data = useProcessedData(drillDownData || []);
 
-    // --- Get all unique vehicle types for dynamic bar generation ---
     const vehicleTypes = useMemo(() => {
         if (!Array.isArray(drillDownData)) return [];
         return Array.from(new Set(drillDownData.map((d) => d.Vehicle_Type)));
     }, [drillDownData]);
 
+
+  if (!drillDownData) {
+    return <div className="p-6 text-gray-500 italic">Loading Drill Down data...</div>;
+  }
 
   return (
     <div className="p-8 bg-gray-50 h-auto">
