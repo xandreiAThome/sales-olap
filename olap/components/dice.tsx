@@ -1,34 +1,14 @@
-'use client';
-
-import { useState, useMemo } from 'react';
+import { fetcher } from '@/utils/fetcher';
+import React, { useMemo, useState } from 'react'
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar } from 'recharts';
 import useSWR from 'swr';
-import {
-  Input
-} from '@/components/ui/input';
-import {
-  Button
-} from '@/components/ui/button'; // ✅ import Button properly
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
 
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to fetch');
-  return res.json();
-};
-
-export default function DiceReport() {
+const DiceDiv = () => {
   const [city1, setCity1] = useState('');
   const [city2, setCity2] = useState('');
   const [fetchKey, setFetchKey] = useState<string | null>(null);
@@ -64,8 +44,9 @@ export default function DiceReport() {
     return Array.from(new Set(rollupData.map((d: any) => d.Category)));
   }, [rollupData]);
 
+
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
+    <div className="p-8 bg-gray-50 h-auto">
       <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">
         Dice Report: Cities vs Categories (Q{DICE_QUARTER}, {DICE_YEAR})
       </h1>
@@ -129,5 +110,7 @@ export default function DiceReport() {
         </div>
       )}
     </div>
-  );
+  )
 }
+
+export default DiceDiv
