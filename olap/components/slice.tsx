@@ -4,6 +4,10 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recha
 import useSWR from 'swr';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+<<<<<<< HEAD
+=======
+import { API_BASE_URL } from '@/lib/config';
+>>>>>>> 09abff75542d199debbc893fe492248a77ec6642
 
 const SliceDiv = () => {
 

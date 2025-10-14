@@ -1,14 +1,11 @@
 from util.db_source import products
-from sqlalchemy.dialects.postgresql import insert
 from models.Dim_Products import Dim_Products
 from sqlalchemy import select, func, case, text
 from util.db_source import Session_db_source
 from contextlib import contextmanager
 from util.db_warehouse import db_warehouse_engine
 from util.logging_config import get_logger
-import itertools
 import os
-import gc
 import io
 import csv
 

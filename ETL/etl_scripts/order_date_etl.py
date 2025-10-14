@@ -6,9 +6,6 @@ import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse, db_warehouse_engine
 from util.logging_config import get_logger
-from sqlalchemy.dialects.postgresql import insert
-import itertools
-import gc
 import os
 from util.utils import parse_date
 import io

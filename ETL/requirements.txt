@@ -1,6 +1,11 @@
-dotenv
+python-dotenv
 sqlalchemy
 psycopg2-binary
 cryptography
 sympy
 alembic
+fastapi
+uvicorn
+mysql-connector-python
+pymysql
+pandas
