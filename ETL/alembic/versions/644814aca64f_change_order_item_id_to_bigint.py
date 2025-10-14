@@ -20,12 +20,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Drop foreign key constraints temporarily (if any reference Order_Item_ID)
-    # Change Order_Item_ID from INT to BIGINT
-    op.execute('ALTER TABLE fact_order_items MODIFY COLUMN Order_Item_ID BIGINT NOT NULL')
+    # Use Alembic's alter_column which works across databases
+    with op.batch_alter_table('fact_order_items', schema=None) as batch_op:
+        batch_op.alter_column('Order_Item_ID',
+                              existing_type=sa.Integer(),
+                              type_=sa.BigInteger(),
+                              existing_nullable=False)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # Change Order_Item_ID back from BIGINT to INT
-    op.execute('ALTER TABLE fact_order_items MODIFY COLUMN Order_Item_ID INT NOT NULL')
+    with op.batch_alter_table('fact_order_items', schema=None) as batch_op:
+        batch_op.alter_column('Order_Item_ID',
+                              existing_type=sa.BigInteger(),
+                              type_=sa.Integer(),
+                              existing_nullable=False)
