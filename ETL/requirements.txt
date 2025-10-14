@@ -6,3 +6,5 @@ pymysql
 cryptography
 sympy
 alembic
+fastapi
+uvicorn
