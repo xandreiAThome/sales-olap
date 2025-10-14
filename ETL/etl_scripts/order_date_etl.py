@@ -2,6 +2,7 @@ from util.db_source import orderitems, orders, products
 from sqlalchemy import select, func, text
 from models.Dim_Date import Dim_Date
 from models.Fact_Order_Items import Fact_Order_Items
+import pandas as pd
 from util.db_source import Session_db_source
 from util.db_warehouse import Session_db_warehouse, db_warehouse_engine
 from util.logging_config import get_logger
