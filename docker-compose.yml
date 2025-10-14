@@ -12,6 +12,8 @@ services:
       MYSQL_PASSWORD: devpass1
     volumes:
       - mysql_src_data:/var/lib/mysql
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword1"]
       interval: 10s
@@ -23,7 +25,7 @@ services:
     container_name: postgres_warehouse_db
     restart: unless-stopped
     ports:
-      - "5433:5432"       # Host port 5432 maps to container's 5432
+      - "5433:5432"       # Host port 5433 maps to container's 5432
     environment:
       POSTGRES_DB: db_warehouse
       POSTGRES_USER: devuser2
@@ -31,34 +33,18 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_warehouse_data:/var/lib/postgresql/data
-    command:
-      - "postgres"
-      # Memory settings
-      - "-c"
-      - "shared_buffers=512MB"              # Increased from 256MB
-      - "-c"
-      - "effective_cache_size=2GB"          # Increased from 1GB
-      - "-c"
-      - "maintenance_work_mem=512MB"        # Increased from 128MB (for index creation)
-      - "-c"
-      - "work_mem=32MB"                     # Increased from 16MB
-      # WAL and checkpoint settings for ETL performance
-      - "-c"
-      - "max_wal_size=4GB"                  # Allow larger WAL for bulk operations
-      - "-c"
-      - "checkpoint_completion_target=0.9"  # Smooth out checkpoint I/O
-      - "-c"
-      - "synchronous_commit=off"            # Faster commits (acceptable for ETL)
-      # Connection settings
-      - "-c"
-      - "max_connections=200"
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devuser2 -d db_warehouse"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+networks:
+  app_network:
+    driver: bridge
+
 volumes:
   mysql_src_data:
   postgres_warehouse_data:
-

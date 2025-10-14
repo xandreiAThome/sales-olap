@@ -1,6 +1,6 @@
 #!/bin/bash
 # ETL Entrypoint Script
-# Runs migrations first, then starts the ETL pipeline
+# Installs dependencies, runs migrations, then starts the ETL pipeline
 
 set -e
 
@@ -13,7 +13,7 @@ cd /app
 
 # Wait a bit for databases to be fully ready
 echo "Waiting for databases to be ready..."
-sleep 5
+sleep 8
 
 # Debug: Check if alembic.ini exists
 if [ ! -f "alembic.ini" ]; then

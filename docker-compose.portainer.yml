@@ -1,0 +1,154 @@
+services:
+  mysql_src_db:
+    image: mysql:8.1
+    container_name: mysql_src_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_SRC_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_SRC_DATABASE}
+      MYSQL_USER: ${MYSQL_SRC_USER}
+      MYSQL_PASSWORD: ${MYSQL_SRC_PASSWORD}
+    volumes:
+      - mysql_src_data:/var/lib/mysql
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_SRC_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Security: No ports exposed (only accessible within Docker network)
+
+  postgres_warehouse_db:
+    image: postgres:16-alpine
+    container_name: postgres_warehouse_db
+    restart: unless-stopped
+    ports:
+      # Exposed to localhost only - use SSH tunnel for remote access
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_WH_DATABASE}
+      POSTGRES_USER: ${POSTGRES_WH_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_WH_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_warehouse_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_WH_USER} -d ${POSTGRES_WH_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  etl:
+    build:
+      context: ./ETL
+      dockerfile: Dockerfile
+    # Or use pre-built image:
+    # image: ghcr.io/xandreiathome/sales-olap-etl:latest
+    container_name: etl_pipeline
+    restart: "no"  # Run once and stop (not a background service)
+    depends_on:
+      mysql_src_db:
+        condition: service_healthy
+      postgres_warehouse_db:
+        condition: service_healthy
+    environment:
+      # Database connections use Docker service names
+      DATABASE_SOURCE_URL: mysql+pymysql://${MYSQL_SRC_USER}:${MYSQL_SRC_PASSWORD}@mysql_src_db:3306/${MYSQL_SRC_DATABASE}
+      DATABASE_WAREHOUSE_URL: postgresql://${POSTGRES_WH_USER}:${POSTGRES_WH_PASSWORD}@postgres_warehouse_db:5432/${POSTGRES_WH_DATABASE}
+      BATCH_SIZE: ${BATCH_SIZE:-10000}
+    networks:
+      - app_network
+
+  fastapi:
+    build:
+      context: ./ETL
+      dockerfile: Dockerfile.api
+    # Or use pre-built image:
+    # image: ghcr.io/xandreiathome/sales-olap-api:latest
+    container_name: fastapi_server
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres_warehouse_db:
+        condition: service_healthy
+    environment:
+      # FastAPI connects to warehouse database
+      DATABASE_WAREHOUSE_URL: postgresql://${POSTGRES_WH_USER}:${POSTGRES_WH_PASSWORD}@postgres_warehouse_db:5432/${POSTGRES_WH_DATABASE}
+    networks:
+      - app_network
+    # Override entrypoint to run API instead of ETL
+    entrypoint: ["python", "api.py"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nextjs:
+    build:
+      context: ./olap
+      dockerfile: Dockerfile
+    # Or use pre-built image:
+    # image: ghcr.io/xandreiathome/sales-olap-frontend:latest
+    container_name: nextjs_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    environment:
+      # Next.js environment variables
+      NEXT_PUBLIC_API_URL: http://fastapi:4000
+      NODE_ENV: production
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  mysql_src_data:
+    driver: local
+  postgres_warehouse_data:
+    driver: local
+
+# MySQL Source Database:
+# MYSQL_SRC_ROOT_PASSWORD=<your-strong-password>
+# MYSQL_SRC_USER=devuser1
+# MYSQL_SRC_PASSWORD=<your-strong-password>
+# MYSQL_SRC_DATABASE=db_src
+#
+# PostgreSQL Warehouse:
+# POSTGRES_WH_USER=devuser2
+# POSTGRES_WH_PASSWORD=<your-strong-password>
+# POSTGRES_WH_DATABASE=db_warehouse
+#
+# ETL Settings:
+# BATCH_SIZE=10000
+#
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_Users.sql
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_Products.sql
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_Riders.sql
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_Couriers.sql
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_Orders.sql
+# docker exec -i mysql_src_db mysql -uroot -p${MYSQL_SRC_ROOT_PASSWORD} ${MYSQL_SRC_DATABASE} < faker_OrderItems.sql
+#
+# Next.js Frontend: http://localhost:3000
+# FastAPI Backend: http://localhost:4000
+# FastAPI Docs: http://localhost:4000/docs
+# PostgreSQL: localhost:5432 (via SSH tunnel)
