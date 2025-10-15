@@ -49,10 +49,11 @@ def get_db():
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT dd.`Year`, dd.Quarter , dd.`Month`,  SUM(foi.Total_Revenue) as revenue
+            SELECT dd."Year", dd."Quarter", dd."Month", SUM(foi."Total_Revenue") as revenue
             FROM fact_order_items foi
-            JOIN dim_date dd on dd.Date_ID  = foi.Delivery_Date_ID
-            GROUP BY dd.`Year` , dd.Quarter , dd.`Month` WITH ROLLUP
+            JOIN dim_date dd on dd."Date_ID" = foi."Delivery_Date_ID"
+            GROUP BY ROLLUP(dd."Year", dd."Quarter", dd."Month")
+            ORDER BY dd."Year" NULLS LAST, dd."Quarter" NULLS LAST, dd."Month" NULLS LAST
         """)
         result = db.execute(sql)
         rows = result.fetchall()
@@ -65,20 +66,20 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT 
-                dr.Courier_Name, 
-                dr.Vehicle_Type, 
-                dr.First_Name, 
-                dr.Last_Name,
+           SELECT 
+                dr."Courier_Name", 
+                dr."Vehicle_Type", 
+                dr."First_Name", 
+                dr."Last_Name",
                 agg.total_revenue
             FROM (
                 SELECT 
-                    Delivery_Rider_ID,
-                    SUM(Total_Revenue) as total_revenue
+                    "Delivery_Rider_ID",
+                    SUM("Total_Revenue") as total_revenue
                 FROM fact_order_items
-                GROUP BY Delivery_Rider_ID
+                GROUP BY "Delivery_Rider_ID"
             ) agg
-            JOIN dim_riders dr ON dr.Rider_ID = agg.Delivery_Rider_ID
+            JOIN dim_riders dr ON dr."Rider_ID" = agg."Delivery_Rider_ID"
             ORDER BY agg.total_revenue DESC
         """)
         result = db.execute(sql)
@@ -92,12 +93,12 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(city: str, db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT du.city, dp.Name ,SUM(foi.Total_Revenue ) as total_revenue
+            SELECT du."City", dp."Name", SUM(foi."Total_Revenue") as total_revenue
             FROM fact_order_items foi
-            JOIN dim_users du  ON du.Users_ID = foi.User_ID
-            JOIN dim_products dp ON foi.Product_ID = dp.Product_ID
-            WHERE du.City = :city
-            GROUP BY dp.Product_ID
+            JOIN dim_users du ON du."Users_ID" = foi."User_ID"
+            JOIN dim_products dp ON foi."Product_ID" = dp."Product_ID"
+            WHERE du."City" = :city
+            GROUP BY du."City", dp."Product_ID", dp."Name"
             ORDER BY total_revenue DESC
         """)
         result = db.execute(sql, {"city": city})
@@ -112,16 +113,16 @@ def run_raw_query(city: str, db: Session = Depends(get_db)):
 def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT du.City, dp.Category, dd.`Year`, dd.Quarter, SUM(foi.Total_Revenue) AS total_revenue
+            SELECT du."City", dp."Category", dd."Year", dd."Quarter", SUM(foi."Total_Revenue") AS total_revenue
             FROM fact_order_items foi
-            JOIN dim_users du ON du.Users_ID = foi.User_ID
-            JOIN dim_products dp ON dp.Product_ID = foi.Product_ID
-            JOIN dim_date dd ON dd.Date_ID = foi.Delivery_Date_ID
-            WHERE du.City IN (:city1, :city2)
-              AND dp.Category IN (:category1, :category2)
-              AND dd.`Year` = '2025'
-              AND dd.Quarter = 2
-            GROUP BY du.City, dp.Category, dd.`Year`, dd.Quarter
+            JOIN dim_users du ON du."Users_ID" = foi."User_ID"
+            JOIN dim_products dp ON dp."Product_ID" = foi."Product_ID"
+            JOIN dim_date dd ON dd."Date_ID" = foi."Delivery_Date_ID"
+            WHERE du."City" IN (:city1, :city2)
+              AND dp."Category" IN (:category1, :category2)
+              AND dd."Year" = 2025
+              AND dd."Quarter" = 2
+            GROUP BY du."City", dp."Category", dd."Year", dd."Quarter"
             ORDER BY total_revenue DESC;
         """)
         
@@ -136,7 +137,7 @@ def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Se
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT DISTINCT City FROM dim_users
+            SELECT DISTINCT "City" FROM dim_users ORDER BY "City"s
         """)
         result = db.execute(sql)
         rows = result.fetchall()
@@ -149,7 +150,7 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT DISTINCT Category FROM dim_products
+             SELECT DISTINCT "Category" FROM dim_products ORDER BY "Category"
         """)
         result = db.execute(sql)
         rows = result.fetchall()
