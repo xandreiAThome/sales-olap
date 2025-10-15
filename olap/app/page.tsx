@@ -12,10 +12,11 @@ import SliceDiv from '@/components/slice';
 import DiceDiv from '@/components/dice';
 import RollupDiv from '@/components/rollup';
 import DrillDownDiv from '@/components/drilldown';
+import { API_BASE_URL } from '@/lib/config';
 
 export default function Home() {
   const { data: cities, error: citiesError } = useSWR(
-      'http://localhost:4000/api/cities',
+      `${API_BASE_URL}/api/cities`,
       fetcher
   );
 
