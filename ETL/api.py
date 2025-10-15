@@ -134,12 +134,24 @@ def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Se
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.get("/api/cities")
-def run_raw_query(db: Session = Depends(get_db)):
+def run_raw_query(q: Optional[str] = Query(None, description="Optional search query to filter cities"), db: Session = Depends(get_db)):
     try:
-        sql = text("""
-            SELECT DISTINCT "City" FROM dim_users ORDER BY "City"
-        """)
-        result = db.execute(sql)
+        if q and q.strip():
+            # Use ILIKE for case-insensitive partial matching
+            sql = text("""
+                SELECT DISTINCT "City" FROM dim_users
+                WHERE "City" ILIKE :pattern
+                ORDER BY "City"
+                LIMIT 50
+            """)
+            pattern = f"%{q.strip()}%"
+            result = db.execute(sql, {"pattern": pattern})
+        else:
+            sql = text("""
+                SELECT DISTINCT "City" FROM dim_users ORDER BY "City" LIMIT 500
+            """)
+            result = db.execute(sql)
+
         rows = result.fetchall()
 
         return [row._mapping["City"] for row in rows]

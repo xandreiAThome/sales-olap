@@ -17,6 +17,7 @@ import {
   Legend,
   Bar,
   ResponsiveContainer,
+  Line,
 } from "recharts";
 import useSWR from "swr";
 import { API_BASE_URL } from "@/lib/config";
