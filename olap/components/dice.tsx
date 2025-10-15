@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { fetcher } from '@/utils/fetcher';
-import React, { useMemo, useState, useEffect } from 'react';
+import { fetcher } from "@/utils/fetcher";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -11,21 +11,54 @@ import {
   Tooltip,
   Legend,
   Bar,
-} from 'recharts';
-import useSWR from 'swr';
-import { Button } from './ui/button';
-import Combobox from './combobox';
-import { Input } from './ui/input';
-import { API_BASE_URL } from '@/lib/config';
+} from "recharts";
+import useSWR from "swr";
+import { Button } from "./ui/button";
+import Combobox from "./combobox";
+import { Input } from "./ui/input";
+import { API_BASE_URL } from "@/lib/config";
 
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
 
 const DiceDiv = () => {
-  const [city1, setCity1] = useState('');
-  const [city2, setCity2] = useState('');
-  const [category1, setCategory1] = useState('');
-  const [category2, setCategory2] = useState('');
+  const [city1, setCity1] = useState("");
+  const [city2, setCity2] = useState("");
+
+  // Autocomplete state for city1
+  const [city1Query, setCity1Query] = useState("");
+  const [debouncedCity1Query, setDebouncedCity1Query] = useState(city1Query);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCity1Query(city1Query), 300);
+    return () => clearTimeout(t);
+  }, [city1Query]);
+
+  // Autocomplete state for city2
+  const [city2Query, setCity2Query] = useState("");
+  const [debouncedCity2Query, setDebouncedCity2Query] = useState(city2Query);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCity2Query(city2Query), 300);
+    return () => clearTimeout(t);
+  }, [city2Query]);
+
+  // SWR for city options
+  const city1Url = debouncedCity1Query
+    ? `${API_BASE_URL}/api/cities?q=${encodeURIComponent(debouncedCity1Query)}`
+    : `${API_BASE_URL}/api/cities`;
+  const { data: city1Options, isLoading: city1Loading } = useSWR<string[]>(
+    city1Url,
+    fetcher
+  );
+
+  const city2Url = debouncedCity2Query
+    ? `${API_BASE_URL}/api/cities?q=${encodeURIComponent(debouncedCity2Query)}`
+    : `${API_BASE_URL}/api/cities`;
+  const { data: city2Options, isLoading: city2Loading } = useSWR<string[]>(
+    city2Url,
+    fetcher
+  );
+  const [category1, setCategory1] = useState("");
+  const [category2, setCategory2] = useState("");
 
   const [diceData, setDiceData] = useState<any[] | null>(null);
   const [diceError, setDiceError] = useState<string | null>(null);
@@ -70,7 +103,7 @@ const DiceDiv = () => {
         setDiceData(result);
       }
     } catch (err: any) {
-      setDiceError(err?.message || 'Failed to fetch dice data');
+      setDiceError(err?.message || "Failed to fetch dice data");
       setDiceData([]);
     } finally {
       setIsLoading(false);
@@ -92,6 +125,15 @@ const DiceDiv = () => {
     return Object.values(map);
   }, [diceData]);
 
+  // Determine which selected cities have results
+  const missingCities = useMemo(() => {
+    if (!chartData || !Array.isArray(chartData) || chartData.length === 0)
+      return [city1, city2].filter(Boolean);
+
+    const present = new Set(chartData.map((d: any) => d.City));
+    return [city1, city2].filter((c) => c && !present.has(c));
+  }, [chartData, city1, city2]);
+
   return (
     <div className="flex flex-col items-center bg-gray-50 p-8 rounded-2xl shadow-md">
       <div className="p-8 bg-gray-50 min-h-screen">
@@ -103,23 +145,31 @@ const DiceDiv = () => {
         <div className="flex flex-wrap gap-4 mb-6 justify-center items-end">
           {/* City 1 */}
           <div className="flex flex-col items-start">
-            <label className="text-sm font-medium mb-1">City 1</label>
-            <Input
-              className="w-[200px]"
+            <Combobox
+              label="City 1"
+              labelPosition="top"
+              options={city1Options || []}
               value={city1}
-              onChange={(e) => setCity1(e.target.value)}
+              onChange={setCity1}
               placeholder="Enter City 1"
+              inputValue={city1Query}
+              onInputChange={(val: string) => setCity1Query(val)}
+              loading={city1Loading}
             />
           </div>
 
           {/* City 2 */}
           <div className="flex flex-col items-start">
-            <label className="text-sm font-medium mb-1">City 2</label>
-            <Input
-              className="w-[200px]"
+            <Combobox
+              label="City 2"
+              labelPosition="top"
+              options={city2Options || []}
               value={city2}
-              onChange={(e) => setCity2(e.target.value)}
+              onChange={setCity2}
               placeholder="Enter City 2"
+              inputValue={city2Query}
+              onInputChange={(val: string) => setCity2Query(val)}
+              loading={city2Loading}
             />
           </div>
 
@@ -136,6 +186,7 @@ const DiceDiv = () => {
             <>
               <Combobox
                 label="Category 1"
+                labelPosition="top"
                 options={categories}
                 value={category1}
                 onChange={setCategory1}
@@ -143,6 +194,7 @@ const DiceDiv = () => {
               />
               <Combobox
                 label="Category 2"
+                labelPosition="top"
                 options={categories}
                 value={category2}
                 onChange={setCategory2}
@@ -168,7 +220,7 @@ const DiceDiv = () => {
                 categoriesLoading
               }
             >
-              {isLoading ? 'Generating...' : 'Generate Report'}
+              {isLoading ? "Generating..." : "Generate Report"}
             </Button>
           </div>
         </div>
@@ -187,45 +239,59 @@ const DiceDiv = () => {
           </div>
         ) : diceData.length === 0 ? (
           <div className="text-gray-600 text-center mt-10">
-            No results found for your selected filters.
+            No results found for Cities "{city1}" vs "{city2}" with Categories "
+            {category1}" vs "{category2}".
           </div>
         ) : (
-          <div className="w-full h-[450px] bg-white rounded-2xl shadow-md p-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 20, right: 30, left: 40, bottom: 10 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="City" />
-                <YAxis
-                  label={{ value: 'Revenue', angle: -90, position: 'insideLeft' }}
-                  tickFormatter={(v) =>
-                    typeof v === 'number' ? v.toLocaleString() : v
-                  }
-                />
-                <Tooltip
-                  formatter={(v) =>
-                    Number(v).toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })
-                  }
-                />
-                <Legend />
-                {[category1, category2].map((cat, i) => (
-                  <Bar
-                    key={cat}
-                    dataKey={cat}
-                    fill={['#82ca9d', '#8884d8', '#ffc658', '#ff8042'][i % 4]}
-                    name={cat.charAt(0).toUpperCase() + cat.slice(1)}
+          <div>
+            {missingCities && missingCities.length > 0 && (
+              <div className="text-yellow-700 bg-yellow-50 rounded p-2 mb-4 text-center">
+                No results for: {missingCities.map((c) => `"${c}"`).join(", ")}.
+                Showing available data.
+              </div>
+            )}
+
+            <div className="w-full h-[450px] bg-white rounded-2xl shadow-md p-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartData}
+                  margin={{ top: 20, right: 30, left: 40, bottom: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="City" />
+                  <YAxis
+                    label={{
+                      value: "Revenue",
+                      angle: -90,
+                      position: "insideLeft",
+                    }}
+                    tickFormatter={(v) =>
+                      typeof v === "number" ? v.toLocaleString() : v
+                    }
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+                  <Tooltip
+                    formatter={(v) =>
+                      Number(v).toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })
+                    }
+                  />
+                  <Legend />
+                  {[category1, category2].map((cat, i) => (
+                    <Bar
+                      key={cat}
+                      dataKey={cat}
+                      fill={["#82ca9d", "#8884d8", "#ffc658", "#ff8042"][i % 4]}
+                      name={cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
       </div>
-  </div>
+    </div>
   );
 };
 
