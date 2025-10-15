@@ -5,7 +5,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import useSWR from 'swr';
-import { API_BASE_URL } from '@/lib/config';
 
 // --- SWR fetcher ---
 const fetcher = async (url: string) => {
@@ -33,7 +32,7 @@ const useProcessedData = (data: any[]) => {
 
 export default function CourierRevenueChart() {
   const { data: drillDownData, error: drillDownError } = useSWR(
-    `${API_BASE_URL}/api/drillDown/`,
+    'http://localhost:4000/api/drillDown/',
     fetcher
   );
 

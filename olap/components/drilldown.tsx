@@ -2,7 +2,6 @@ import { fetcher } from '@/utils/fetcher';
 import React, { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import useSWR from 'swr';
-import { API_BASE_URL } from '@/lib/config';
 
 
 const useProcessedData = (data: any[]) => {
@@ -23,7 +22,7 @@ const useProcessedData = (data: any[]) => {
 
 const DrillDownDiv = () => {
     const { data: drillDownData, error: drillDownError } = useSWR(
-        `${API_BASE_URL}/api/drillDown/`,
+        'http://localhost:4000/api/drillDown/',
         fetcher
     );
 

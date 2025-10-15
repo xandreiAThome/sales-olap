@@ -16,7 +16,6 @@ import useSWR from 'swr';
 import { Button } from './ui/button';
 import Combobox from './combobox';
 import { Input } from './ui/input';
-import { API_BASE_URL } from '@/lib/config';
 
 const DICE_YEAR = 2025;
 const DICE_QUARTER = 2;
@@ -36,7 +35,7 @@ const DiceDiv = () => {
     data: categoriesData,
     error: categoriesError,
     isLoading: categoriesLoading,
-  } = useSWR(`${API_BASE_URL}/api/categories`, fetcher);
+  } = useSWR('http://localhost:4000/api/categories', fetcher);
 
   // Always default to empty array
   const categories: string[] = Array.isArray(categoriesData)
@@ -52,7 +51,7 @@ const DiceDiv = () => {
   const handleGenerate = async () => {
     if (!city1 || !city2 || !category1 || !category2) return;
 
-    const url = `${API_BASE_URL}/api/dice/${encodeURIComponent(
+    const url = `http://localhost:4000/api/dice/${encodeURIComponent(
       city1
     )}/${encodeURIComponent(city2)}/${encodeURIComponent(
       category1

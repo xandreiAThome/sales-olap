@@ -14,11 +14,10 @@ import {
 } from '@/components/ui/select';
 import useSWR from 'swr';
 import { fetcher } from '@/utils/fetcher';
-import { API_BASE_URL } from '@/lib/config';
 
 export default function RollupReport() {
   const { data: rollupData, error: rollupError } = useSWR(
-    `${API_BASE_URL}/api/rollup`,
+    'http://localhost:4000/api/rollup',
     fetcher
   );
 
