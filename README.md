@@ -52,7 +52,7 @@ The project aims to achieve the following learning competencies:
 
 ## 🛠️ Tech Stack
 
-- **Database:** MySQL
+- **Database:** MySQL, PostgreSQL
 - **ETL:** Python (Pandas, SQLAlchemy) / SQL scripts
 - **OLAP & Queries:** SQL (aggregation, rollup, drilldown, window functions)
 - **Frontend:** Web-based interface (React) for report visualization
