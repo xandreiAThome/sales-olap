@@ -66,7 +66,7 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-           SELECT 
+            SELECT 
                 dr."Courier_Name", 
                 dr."Vehicle_Type", 
                 dr."First_Name", 
@@ -123,7 +123,7 @@ def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Se
               AND dd."Year" = 2025
               AND dd."Quarter" = 2
             GROUP BY du."City", dp."Category", dd."Year", dd."Quarter"
-            ORDER BY total_revenue DESC;
+            ORDER BY total_revenue DESC
         """)
         
         result = db.execute(sql, {"city1": city1, "city2": city2, "category1": category1, "category2": category2})
@@ -137,7 +137,7 @@ def run_raw_query(city1: str, city2: str, category1: str, category2: str, db: Se
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-            SELECT DISTINCT "City" FROM dim_users ORDER BY "City"s
+            SELECT DISTINCT "City" FROM dim_users ORDER BY "City"
         """)
         result = db.execute(sql)
         rows = result.fetchall()
@@ -150,7 +150,7 @@ def run_raw_query(db: Session = Depends(get_db)):
 def run_raw_query(db: Session = Depends(get_db)):
     try:
         sql = text("""
-             SELECT DISTINCT "Category" FROM dim_products ORDER BY "Category"
+            SELECT DISTINCT "Category" FROM dim_products ORDER BY "Category"
         """)
         result = db.execute(sql)
         rows = result.fetchall()

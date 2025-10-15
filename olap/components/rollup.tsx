@@ -1,5 +1,3 @@
-"use client";
-
 import { fetcher } from "@/utils/fetcher";
 import {
   Select,
@@ -19,13 +17,13 @@ import {
   Legend,
   Bar,
   ResponsiveContainer,
-  Line,
 } from "recharts";
 import useSWR from "swr";
+import { API_BASE_URL } from "@/lib/config";
 
 const RollupDiv = () => {
   const { data: rollupData, error: rollupError } = useSWR(
-    "http://localhost:4000/api/rollup",
+    `${API_BASE_URL}/api/rollup`,
     fetcher
   );
 
@@ -186,6 +184,7 @@ const RollupDiv = () => {
         📊 Rollup Report - Sales Overview
       </h2>
 
+      {/* --- Filter Selector --- */}
       <div className="flex flex-wrap gap-4 mb-6">
         <Select
           value={filterKey}

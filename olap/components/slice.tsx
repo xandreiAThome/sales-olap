@@ -17,7 +17,7 @@ const SliceDiv = () => {
 
     const handleGenerate = () => {
         if (!city.trim()) return;
-        setFetchKey(`http://localhost:4000/api/slice/${encodeURIComponent(city.trim())}`);
+        setFetchKey(`${API_BASE_URL}/api/slice/${encodeURIComponent(city.trim())}`);
     };
 
   return (
