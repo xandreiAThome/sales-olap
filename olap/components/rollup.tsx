@@ -7,7 +7,7 @@ import {
   SelectGroup,
   SelectItem,
 } from "@/components/ui/select";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   BarChart,
   CartesianGrid,
@@ -31,158 +31,80 @@ const RollupDiv = () => {
   type FilterKey = "Year" | "Quarter" | "Month";
   const [filterKey, setFilterKey] = useState<FilterKey>("Year");
 
-  if (rollupError)
-    return (
-      <div className="p-6 text-red-500 font-semibold">
-        Failed to load data 😢
-      </div>
-    );
-  if (!rollupData)
-    return (
-      <div className="p-6 text-gray-500 italic">Loading rollup data...</div>
-    );
+  // 🧠 Prepare chart data based on the selected filter
+  const aggregatedData = useMemo(() => {
+    if (!rollupData || !Array.isArray(rollupData)) return [];
 
-  const grouped: Record<string, number> = {};
-  const quarterMap: Record<string, number> = {};
-  const yearTotals: Record<number, number> = {};
+    const cleaned = rollupData
+      .map((d: any) => ({
+        ...d,
+        revenue: Number(d.revenue ?? 0),
+        Year: d.Year ?? null,
+        Quarter: d.Quarter ?? null,
+        Month: d.Month ?? null,
+      }))
+      .filter((d: any) => d.revenue > 0);
 
-  console.log(rollupData);
-
-  rollupData.forEach((item: any) => {
-    const year = item.Year ?? null;
-    const quarter = item.Quarter ?? null;
-    const monthRaw = item.Month ?? null;
-    const rev = item.revenue ?? 0;
-
-    const month =
-      monthRaw != null
-        ? Number.isFinite(Number(monthRaw))
-          ? parseInt(String(monthRaw), 10)
-          : monthRaw
-        : null;
+    let labeled: { label: string; revenue: number }[] = [];
 
     if (filterKey === "Year") {
-      if (year == null && quarter == null && month == null) {
-        grouped["Total Revenue"] = (grouped["Total Revenue"] || 0) + rev;
-      } else if (year != null) {
-        grouped[`${year}`] = (grouped[`${year}`] || 0) + rev;
-      } else {
-        grouped["Unknown Year"] = (grouped["Unknown Year"] || 0) + rev;
-      }
-    } else if (filterKey === "Quarter") {
-      if (year == null && quarter == null && month == null) return;
+      labeled = cleaned
+        .filter((d: any) => d.Year != null && d.Quarter == null && d.Month == null)
+        .map((d: any) => ({
+          label: `${d.Year}`,
+          revenue: d.revenue,
+        }));
 
-      if (quarter != null && year != null) {
-        // Always use Q{quarter}-{year} format
-        const qk = `Q${quarter}-${year}`;
-        quarterMap[qk] = (quarterMap[qk] || 0) + rev;
-      } else if (month != null && year != null) {
-        // Derive quarter from month if quarter is missing
-        const m = Number(month);
-        if (Number.isFinite(m)) {
-          const derivedQ = Math.ceil(m / 3);
-          const qk = `Q${derivedQ}-${year}`;
-          quarterMap[qk] = (quarterMap[qk] || 0) + rev;
-        } else {
-          quarterMap["Unknown"] = (quarterMap["Unknown"] || 0) + rev;
-        }
-      }
-    } else if (filterKey === "Month") {
-      if (month == null) {
-        return;
-      }
-
-      if (year != null) {
-        grouped[`M${month}-${year}`] =
-          (grouped[`M${month}-${year}`] || 0) + rev;
-      } else {
-        grouped[`M${month}`] = (grouped[`M${month}`] || 0) + rev;
-      }
-    }
-  });
-
-  const totalAll = rollupData.reduce(
-    (s: number, it: any) => s + (it.revenue ?? 0),
-    0
-  );
-
-  let aggregatedData: { label: string; revenue: number }[] = [];
-
-  if (filterKey === "Quarter") {
-    // Only show Q{quarter}-{year} entries, sorted by year then quarter
-    const quarterEntries = Object.entries(quarterMap)
-      .map(([k, v]) => {
-        const m = k.match(/^Q(\d+)-(\d{4})$/);
-        if (m)
-          return {
-            label: k,
-            revenue: v,
-            year: parseInt(m[2], 10),
-            quarter: parseInt(m[1], 10),
-          };
-        if (k === "Unknown")
-          return { label: k, revenue: v, year: 9999, quarter: 99 };
-        return { label: k, revenue: v, year: 9999, quarter: 99 };
-      })
-      .sort((a, b) =>
-        a.year === b.year ? a.quarter - b.quarter : a.year - b.year
-      )
-      .map(({ label, revenue }) => ({ label, revenue }));
-
-    aggregatedData = quarterEntries;
-  } else {
-    aggregatedData = Object.entries(grouped).map(([label, revenue]) => ({
-      label,
-      revenue,
-    }));
-
-    if (filterKey === "Year") {
-      const idx = aggregatedData.findIndex((d) => d.label === "Total Revenue");
-      if (idx >= 0) aggregatedData[idx].revenue = totalAll;
-      else
-        aggregatedData.unshift({ label: "Total Revenue", revenue: totalAll });
-
-      aggregatedData = aggregatedData.sort((a, b) => {
-        if (a.label === "Total Revenue") return -1;
-        if (b.label === "Total Revenue") return 1;
-        const ay = a.label.match(/^(\d{4})$/);
-        const by = b.label.match(/^(\d{4})$/);
-        if (ay && by) return parseInt(ay[1], 10) - parseInt(by[1], 10);
-        if (ay) return -1;
-        if (by) return 1;
-        return a.label.localeCompare(b.label);
-      });
-    } else {
-      aggregatedData = aggregatedData
-        .map((d) => ({ ...d }))
-        .sort((a, b) => {
-          const am = a.label.match(/^M(\d+)-(\d{4})$/);
-          const bm = b.label.match(/^M(\d+)-(\d{4})$/);
-          if (am && bm) {
-            const ay = parseInt(am[2], 10),
-              amn = parseInt(am[1], 10);
-            const by = parseInt(bm[2], 10),
-              bmn = parseInt(bm[1], 10);
-            return ay === by ? amn - bmn : ay - by;
-          }
-          const aNoYear = a.label.match(/^M(\d+)$/);
-          const bNoYear = b.label.match(/^M(\d+)$/);
-          if (am && bNoYear) return -1;
-          if (aNoYear && bm) return 1;
-          if (aNoYear && bNoYear)
-            return parseInt(aNoYear[1], 10) - parseInt(bNoYear[1], 10);
-          return a.label.localeCompare(b.label);
+      const grandTotal = cleaned.find(
+        (d: any) => d.Year === null && d.Quarter === null && d.Month === null
+      );
+      if (grandTotal) {
+        labeled.push({
+          label: "Grand Total",
+          revenue: grandTotal.revenue,
         });
+      }
     }
-  }
 
-  if (aggregatedData.length === 0)
+    else if (filterKey === "Quarter") {
+      labeled = cleaned
+        .filter((d: any) => d.Year != null && d.Quarter != null && d.Month == null)
+        .map((d: any) => ({
+          label: `Q${d.Quarter}-${d.Year}`,
+          revenue: d.revenue,
+        }));
+    }
+
+    else if (filterKey === "Month") {
+      labeled = cleaned
+        .filter((d: any) => d.Year != null && d.Month != null)
+        .map((d: any) => ({
+          label: `M${d.Month}-${d.Year}`,
+          revenue: d.revenue,
+        }));
+    }
+
+    labeled.sort((a: any, b: any) => {
+      if (a.label === "Grand Total") return 1;
+      if (b.label === "Grand Total") return -1;
+      const [aPart, aYear] = a.label.split("-").map((x: string) => x.replace(/[A-Z]/g, ""));
+      const [bPart, bYear] = b.label.split("-").map((x: string) => x.replace(/[A-Z]/g, ""));
+      return Number(aYear) - Number(bYear) || Number(aPart) - Number(bPart);
+    });
+
+    return labeled;
+  }, [rollupData, filterKey]);
+
+  if (rollupError)
+    return <div className="p-6 text-red-500">Failed to load rollup data 😢</div>;
+
+  if (!aggregatedData || aggregatedData.length === 0)
     return <div className="p-6 text-gray-500 italic">No data available.</div>;
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow w-full max-w-auto mb-12">
       <h2 className="text-2xl font-bold mb-6">
-        📊 Rollup Report - Sales Overview
+        📊 Rollup Report - Sales Trend Overview
       </h2>
 
       {/* --- Filter Selector --- */}
@@ -231,6 +153,7 @@ const RollupDiv = () => {
             angle={-45}
             className="text-xs z-50"
           />
+          {/* 🔴 Trend line */}
           <Line
             type="monotone"
             dataKey="revenue"

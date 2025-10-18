@@ -1,5 +1,5 @@
 import { fetcher } from "@/utils/fetcher";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -15,15 +15,13 @@ import { API_BASE_URL } from "@/lib/config";
 
 const SliceDiv = () => {
   const [city, setCity] = useState("East Kobe");
-  const [fetchKey, setFetchKey] = useState<string | null>(null); // 🔹 only fetch when this changes
+  const [fetchKey, setFetchKey] = useState<string | null>(null);
 
-  const {
-    data: sliceData,
-    error: sliceError,
-    isLoading,
-  } = useSWR(fetchKey, fetcher);
+  const { data: sliceData, error: sliceError, isLoading } = useSWR(
+    fetchKey,
+    fetcher
+  );
 
-  // For city autocomplete with debounce
   const [cityQuery, setCityQuery] = useState("");
   const [debouncedCityQuery, setDebouncedCityQuery] = useState(cityQuery);
 
@@ -31,46 +29,44 @@ const SliceDiv = () => {
     const t = setTimeout(() => setDebouncedCityQuery(cityQuery), 300);
     return () => clearTimeout(t);
   }, [cityQuery]);
+
   const citiesUrl = debouncedCityQuery
     ? `${API_BASE_URL}/api/cities?q=${encodeURIComponent(debouncedCityQuery)}`
     : `${API_BASE_URL}/api/cities`;
+
   const { data: cityOptions, isLoading: citiesLoading } = useSWR<string[]>(
     citiesUrl,
     fetcher
   );
 
-  // Expanded color palette for pie chart (24 colors)
   const COLORS = [
-    "#3b82f6", // blue-500
-    "#2563eb", // blue-600
-    "#06b6d4", // cyan-500
-    "#0891b2", // cyan-600
-    "#0ea5a4", // teal-500
-    "#14b8a6", // teal-400
-    "#10b981", // green-500
-    "#34d399", // green-400
-    "#84cc16", // lime-400
-    "#bef264", // lime-200
-    "#f59e0b", // amber-500
-    "#f97316", // orange-500
-    "#fb923c", // orange-400
-    "#ef4444", // red-500
-    "#f43f5e", // rose-500
-    "#db2777", // pink-600
-    "#a78bfa", // violet-300
-    "#8b5cf6", // violet-500
-    "#6366f1", // indigo-500
-    "#e879f9", // fuchsia-400
-    "#fca5a5", // rose-300
-    "#b45309", // amber-700
-    "#334155", // slate-700
-    "#0f766e", // emerald-600
+    "#3b82f6", "#2563eb", "#06b6d4", "#0891b2", "#0ea5a4", "#14b8a6",
+    "#10b981", "#34d399", "#84cc16", "#bef264", "#f59e0b", "#f97316",
+    "#fb923c", "#ef4444", "#f43f5e", "#db2777", "#a78bfa", "#8b5cf6",
+    "#6366f1", "#e879f9", "#fca5a5", "#b45309", "#334155", "#0f766e",
   ];
 
   const handleGenerate = () => {
     if (!city.trim()) return;
     setFetchKey(`${API_BASE_URL}/api/slice/${encodeURIComponent(city.trim())}`);
   };
+
+  const TOP_N = 50; // Show only top N categories (baguhin nlng depends sa needs)
+  const LEGEND_MAX = 200; // Still show legend if <= N (baguhin nlng depends sa needs)
+
+  const processedData = useMemo(() => {
+    if (!sliceData || !Array.isArray(sliceData)) return [];
+
+    const cleaned = sliceData.map((d: any) => ({
+      ...d,
+      total_revenue: Number(d.total_revenue ?? 0),
+      Name: String(d.Name ?? "Unknown"),
+    }));
+
+    return cleaned.sort((a: any, b: any) => b.total_revenue - a.total_revenue).slice(0, TOP_N);
+  }, [sliceData]);
+
+  const showLegend = processedData.length <= LEGEND_MAX;
 
   return (
     <div>
@@ -103,7 +99,7 @@ const SliceDiv = () => {
           </Button>
         </div>
 
-        {/* Conditional UI */}
+        {/* --- CONDITIONAL RENDERING --- */}
         {!fetchKey ? (
           <div className="text-gray-600 mt-8">
             Please enter a city and click “Generate Report”.
@@ -116,8 +112,7 @@ const SliceDiv = () => {
           <div className="text-gray-500 p-4 text-center">Loading data...</div>
         ) : !sliceData || sliceData.length === 0 ? (
           <div className="text-gray-500 p-4 text-center">
-            No data found for "{city}". Try another city or check the data
-            source.
+            No data found for "{city}". Try another city or check the data source.
           </div>
         ) : (
           <div className="bg-white p-6 rounded-2xl shadow w-full max-w-auto mb-12">
@@ -128,7 +123,7 @@ const SliceDiv = () => {
             <ResponsiveContainer width="100%" height={650}>
               <PieChart>
                 <Pie
-                  data={sliceData}
+                  data={processedData}
                   cx="50%"
                   cy="50%"
                   outerRadius={120}
@@ -136,7 +131,7 @@ const SliceDiv = () => {
                   nameKey="Name"
                   labelLine={false}
                 >
-                  {sliceData.map((_: any, index: number) => (
+                  {processedData.map((_: any, index: number) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={COLORS[index % COLORS.length]}
@@ -146,21 +141,27 @@ const SliceDiv = () => {
 
                 <Tooltip
                   formatter={(value: number) =>
-                    value.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })
+                    value.toLocaleString(undefined, { maximumFractionDigits: 2 })
                   }
                   labelFormatter={(name: string) => `Category: ${name}`}
                 />
 
-                <Legend
-                  verticalAlign="bottom"
-                  align="center"
-                  iconType="circle"
-                  layout="horizontal"
-                />
+                {showLegend && (
+                  <Legend
+                    verticalAlign="bottom"
+                    align="center"
+                    iconType="circle"
+                    layout="horizontal"
+                  />
+                )}
               </PieChart>
             </ResponsiveContainer>
+
+            {!showLegend && (
+              <div className="text-sm text-gray-500 mt-2">
+                Legend hidden because there are many items — hover slices to see details.
+              </div>
+            )}
           </div>
         )}
       </div>

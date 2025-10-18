@@ -4,7 +4,7 @@ services:
     container_name: mysql_src_db
     restart: unless-stopped
     ports:
-      - "3306:3306"       # Host port 3306 maps to container's 3306
+      - "3307:3306"       # Host port 3306 maps to container's 3306 (binago ko muna to 3307 conflict saken)
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword1
       MYSQL_DATABASE: db_src
